@@ -28,6 +28,20 @@
 <script>
   const TOPICS = ['Cooking', 'Cricket highlights', 'Malayalam songs', 'News live', 'Gardening tips', 'Travel vlog', 'Movie trailer', 'Yoga for beginners', 'Kerala recipes', 'Football', 'Comedy', 'Music mix'];
   const RESULTS = ['Google Forms Tutorial for Beginners', 'How to create a Google Form (step by step)', 'Google Forms tips and tricks', 'Make a quiz with Google Forms'];
+  // Malayalam results for the M1 goal tests. "തെങ്ങ്" alone is deliberately thin (1 video) so the English
+  // fallback ("coconut tree climbing malayalam") is exercised; "zzthin" returns nothing at all.
+  const ML_SOLAR = ['സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ എങ്ങനെ — പൂർണ്ണ വിവരണം', 'വീട്ടിൽ സോളാർ പാനൽ വെക്കാം', 'Solar panel installation Malayalam', 'സോളാർ സബ്സിഡി എങ്ങനെ കിട്ടും'];
+  const COCONUT = ['Coconut tree climbing machine Malayalam demo', 'തെങ്ങ് കയറ്റം പഠിക്കാം | coconut tree climbing malayalam', 'Easy coconut tree climbing Malayalam', 'Coconut climbing safety tips Malayalam'];
+  // Like real YouTube snippet links: literal markup and entities inside the accessible name.
+  const MARKUP_LABEL = ' aria-label="<b>സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ</b> എങ്ങനെ&amp;nbsp;— പൂർണ്ണ &lt;i&gt;വിവരണം&lt;/i&gt; 3 minutes"';
+  function resultsFor(q) {
+    if (/zzthin/.test(q)) return [];
+    if (/form/i.test(q)) return RESULTS;
+    if (/സോളാർ|solar/i.test(q)) return ML_SOLAR;
+    if (/coconut/i.test(q)) return COCONUT;
+    if (/തെങ്ങ്/.test(q)) return ['തെങ്ങ് — ഒരു ഡോക്യുമെന്ററി'];
+    return TOPICS.slice(0, 4);
+  }
   const vid = (t, i) => `<div class="v"><a class="thumb" href="/watch?v=h${i}"></a><a class="title" href="/watch?v=h${i}">${t} ${i}</a><div class="meta"><a href="/@channel${i}">Channel ${i}</a> · ${i}K views</div><button aria-label="Action menu">⋮</button></div>`;
   function render() {
     const u = new URL(location.href);
@@ -35,8 +49,8 @@
     if (u.pathname === '/results') {
       const q = u.searchParams.get('search_query') || '';
       document.querySelector('[name=search_query]').value = q;
-      const list = /form/i.test(q) ? RESULTS : TOPICS.slice(0, 4);
-      view.innerHTML = '<h2 style="padding:0 16px">Results</h2><div id="results">' + list.map((t, i) => `<div class="r"><a class="thumb" href="/watch?v=r${i}"></a><div><a class="title" href="/watch?v=r${i}">${t}</a><div class="meta">Channel ${i}</div></div></div>`).join('') + '</div>';
+      const list = resultsFor(q);
+      view.innerHTML = '<h2 style="padding:0 16px">Results</h2><div id="results">' + list.map((t, i) => `<div class="r"><a class="thumb" href="/watch?v=r${i}"></a><div><a class="title" href="/watch?v=r${i}"${list === ML_SOLAR && i === 0 ? MARKUP_LABEL : ''}>${t}</a><div class="meta">Channel ${i}</div></div></div>`).join('') + '</div>';
     } else if (u.pathname === '/watch') {
       view.innerHTML = `<div style="padding:16px"><div style="height:360px;background:#000"></div><h1 id="title">${document.querySelector('a[href="/watch?v=' + u.searchParams.get('v') + '"]')?.textContent || 'Video'}</h1><button aria-label="Like">👍</button><button aria-label="Share">Share</button></div>`;
     } else {

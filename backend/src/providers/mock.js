@@ -19,6 +19,17 @@ export function mockPlan(req) {
   const { candidates } = req.snapshot;
   const goal = req.goal.toLowerCase();
   if (isDone(req)) return { status: 'done', instruction_en: 'Done (mock).', instruction_ml: 'കഴിഞ്ഞു (mock).' };
+  // YouTube results opened by Koode's search: the goal quotes the query; point at the result whose
+  // title shares the most words with it (Malayalam or English).
+  if (/^\/results/.test(req.snapshot.path || '')) {
+    const q = (req.goal.match(/"([^"]+)"/) || [])[1] || req.goal;
+    const words = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    const best = candidates.filter((c) => c.role === 'link' && c.label)
+      .map((c) => [words.filter((w) => c.label.toLowerCase().includes(w)).length, c]).filter(([n]) => n > 0)
+      .sort((a, b) => b[0] - a[0])[0];
+    if (best) return { status: 'guide', target_id: best[1].id, instruction_en: `[mock] Open the video "${best[1].label}".`, instruction_ml: `[mock] "${best[1].label}" എന്ന വീഡിയോ തുറക്കൂ.`, expected_observation: 'video page', confidence: 0.5 };
+    return { status: 'cannot_find', instruction_en: 'Mock harness found no matching video.', instruction_ml: 'പൊരുത്തമുള്ള വീഡിയോ കണ്ടില്ല (mock).' };
+  }
   const wantsDark = /dark|night|theme|ഇരുണ്ട|ഡാർക്ക്/.test(goal);
   const search = goal.match(/(?:search|find|look)(?: for)?\s+(?:an? |the )?(.+)|(.+?)\s*(?:തിരയ|കണ്ടെത്ത)/);
   if (search && !wantsDark) {

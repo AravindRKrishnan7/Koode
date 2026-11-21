@@ -4,6 +4,7 @@
 // The planner, arrow and step verification stay in the page.
 const $ = (id) => document.getElementById(id);
 const Sites = self.KoodeSites;
+const Goals = self.KoodeGoals;
 const voice = globalThis.Koode.voice;
 const send = (msg) => chrome.runtime.sendMessage(msg);
 const params = new URLSearchParams(location.search);
@@ -93,12 +94,30 @@ async function handle(text, opts = {}) {
   S.exiting = false;
   clearTimeout(closeTimer);
   await bindTab();
-  const c = Sites.classify(raw, { siteId: S.site && S.site.id });
+  // Personal numbers (phone, Aadhaar, licence, PAN…) are removed here, before routing, any model call,
+  // any URL or the task store. Koode says what it removed.
+  const red = Goals.redact(raw);
+  const privacy = Goals.redactionNotice(red.found);
+  if (red.found.length) { document.body.dataset.koodeRedacted = red.found.join(','); log('removed personal data from the request: ' + red.found.join(', ')); }
+  else delete document.body.dataset.koodeRedacted;
+  for (const k of ['koodeSearch', 'koodeIntentResult', 'koodeOffer', 'koodeNewTab']) delete document.body.dataset[k];
+  const c = Sites.classify(red.text, { siteId: S.site && S.site.id });
   document.body.dataset.koodeIntent = c.type + (c.site ? ':' + c.site.id : '');
   log(`request (${raw.length} chars, ${opts.voice ? 'voice' : 'typed'}) → ${c.type}${c.site ? ' ' + c.site.id : ''}`);
-  const talk = (ml, en) => { say({ ml, en }); if (opts.voice) speak(ml); };
+  const talk = (ml, en) => {
+    say({ ml: (privacy ? privacy.ml + ' ' : '') + ml, en: (privacy ? privacy.en + ' ' : '') + en });
+    if (opts.voice) speak((privacy ? privacy.ml + ' ' : '') + ml);
+  };
+  // Self-harm: a helpline answer right here, with no search and no model call.
+  if (c.type !== 'exit' && Goals.safety(red.text) === 'self_harm') {
+    document.body.dataset.koodeIntent = 'self_harm';
+    setState('idle');
+    return talk(Goals.MSG.selfHarm.ml, Goals.MSG.selfHarm.en);
+  }
   switch (c.type) {
     case 'exit': return exit(opts.voice);
+    case 'youtube_search': return search(c.search, c.goal, opts, talk);
+    case 'intent': return intent(red.text, opts, talk);
     case 'navigate': {
       setState('loading');
       talk(`${c.site.ml} തുറക്കുന്നു…`, `Opening ${c.site.name}…`);
@@ -123,6 +142,51 @@ async function handle(text, opts = {}) {
     }
     default: return;
   }
+}
+
+// Automatic YouTube search: the confirmed request is the consent. The service worker re-validates the
+// query and builds the results URL; the page then points at a relevant video.
+async function search(sr, goal, opts, talk) {
+  setState('loading');
+  const m = Goals.searchText(sr.query);
+  talk(m.ml, m.en);
+  document.body.dataset.koodeSearch = sr.query;
+  const r = await send({ type: 'koode:youtubeSearch', tabId: S.tabId, search: sr, goal, voice: !!opts.voice });
+  if (!r || r.error) { setState('error'); return say({ ml: 'യൂട്യൂബിൽ തിരയാനായില്ല.', en: 'Could not search YouTube: ' + (r && r.error || 'no response') }); }
+  document.body.dataset.koodeNavigated = 'youtube';
+  if (r.newTab) {
+    document.body.dataset.koodeNewTab = String(r.tabId);
+    say({ ml: 'നിങ്ങൾ ടൈപ്പ് ചെയ്തത് നഷ്ടപ്പെടാതിരിക്കാൻ യൂട്യൂബ് പുതിയ ടാബിൽ തുറന്നു.', en: 'YouTube opened in a new tab so what you typed on the page is kept.' });
+  }
+  log(`searching YouTube (${sr.query.length}-char query${r.newTab ? ', new tab' : ''})`);
+}
+
+// Open-ended request: one intent-planner call (Groq, or the labelled mock) nominates a search query or
+// says what Koode can't do yet. Government services are not opened in this version; a how-to video
+// search is offered instead, and only runs if the user presses it.
+async function intent(text, opts, talk) {
+  setState('finding');
+  say({ ml: 'നിങ്ങൾക്ക് എന്താണ് വേണ്ടതെന്ന് മനസ്സിലാക്കുന്നു…', en: 'Working out what you need…' });
+  const resp = await send({ type: 'koode:intent', payload: { goal: text, site_id: S.site && S.site.id } }).catch((e) => ({ error: String(e && e.message || e) }));
+  document.body.dataset.koodeIntentResult = (resp && (resp.type || resp.code)) || 'error';
+  log('intent → ' + document.body.dataset.koodeIntentResult + (resp && resp.planner ? ` (${resp.planner.mock ? 'mock' : resp.planner.model})` : ''));
+  const a = Goals.intentToAction(resp, { guidable: !!S.site });
+  if (a.kind === 'youtube_search') return search(a.search, text, opts, talk);
+  if (a.kind === 'guide') return handleGuide(text, opts);
+  setState('idle');
+  talk(a.ml, a.en);
+  if (a.offer) {
+    document.body.dataset.koodeOffer = a.offer.query;
+    setNotice(a.offerLabel.ml + ' · ' + a.offerLabel.en, { label: '▶ ' + a.offerLabel.ml, id: 'offer', run: () => search(a.offer, text, opts, (ml, en) => { say({ ml, en }); if (opts.voice) speak(ml); }) });
+  }
+}
+
+async function handleGuide(goal, opts) {
+  setState('finding');
+  say({ ml: 'ശരി, ഈ പേജിൽ നോക്കുന്നു…', en: 'Okay — looking at this page…' });
+  const r = await send({ type: 'koode:startOnTab', tabId: S.tabId, goal, voice: !!opts.voice });
+  if (r && r.error) { setState('error'); return say({ ml: 'ഈ പേജിൽ Koode തയ്യാറായിട്ടില്ല. പേജ് റീലോഡ് ചെയ്യൂ.', en: r.error }); }
+  log('guiding on ' + (S.site ? S.site.name : 'this page'));
 }
 
 async function exit(byVoice) {

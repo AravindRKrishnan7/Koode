@@ -18,6 +18,25 @@ side panel. The user performs every click and keystroke; Koode points, explains,
 
 Every transcript is shown for confirmation (✓ / edit / say again) before anything happens.
 
+## Goal-driven requests (M1)
+| Say | Koode does |
+|---|---|
+| `സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ` (any page, New Tab included) | Rule fast path (no model): opens YouTube results for `സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ` directly, points at a relevant video, the user opens it, `/watch` = done (rule, no model). |
+| `എനിക്ക് തെങ്ങ് കയറാൻ പഠിക്കണം` | One intent call (`/api/intent`) → Malayalam query; if fewer than 3 videos come up, one fallback search `coconut tree climbing malayalam`. |
+| `യൂട്യൂബ് തുറന്ന് google forms tutorial തിരയൂ` / on YouTube `… തിരയൂ` | Results opened directly instead of guiding the user through the search box. |
+| `ഡ്രൈവിംഗ് ലൈസൻസ് KL07 2019 0001234 വിവരങ്ങൾ അറിയണം` | Licence number removed before anything leaves the browser (Koode says so). Government sites are not opened in M1; Koode offers a how-to video search instead. |
+| any request on a page with typed input (e.g. a half-filled form) | The search opens in a new tab; the form tab and its values are kept. |
+
+Topic safety (`goals.js safety()`): self-harm requests get a Tele-MANAS 14416 / 112 helpline answer with no search
+or model call; explicit, bomb-making and drug-buying searches are refused; sensitive words are allowed with an
+educational context ("sex education", "suicide prevention", "ലഹരി വിമുക്തി ബോധവൽക്കരണം"). Labels have literal
+markup/entities removed (YouTube snippets); elements are still resolved by snapshot ID.
+
+Routing order: personal-data redaction → rule router (exit / open site / video or search request → YouTube search
+/ guide here) → intent planner only for open-ended requests. The model can only nominate a plain-text query;
+`goals.js` validates it and the service worker builds the YouTube URL itself. Koode still never clicks or types.
+See `docs/CONTRACTS.md` → `/api/intent`.
+
 ## How it works
 - **Side panel voice:** hold the big mic (mouse, or Space/Enter when focused). Audio goes to the backend
   (`/api/stt`, Sarvam Saaras v4; keys stay in the backend). If Chrome can't show the microphone prompt inside
@@ -50,13 +69,13 @@ Every transcript is shown for confirmation (✓ / edit / say again) before anyth
 `sidePanel`, `tabs`, `storage`. Host access: `localhost`, `127.0.0.1`, Google Forms respondent pages,
 `web.whatsapp.com`, `www.youtube.com`. (`scripting` and `activeTab` were removed: the toolbar opens the side panel.)
 
-## Verified (Chrome for Testing 158, macOS, mock planner + mock speech)
+## Verified (Chrome for Testing 158, macOS, mock planner + mock speech + mock intent)
 | Suite | Result |
 |---|---|
-| Unit (`npm run unit`) | 27/27 |
-| Journey (`node e2e/journey.mjs`), WhatsApp/YouTube as local fixtures at their real hostnames | 25/25 checks, 3 consecutive runs (≈ 35 s per journey) |
+| Unit (`npm run unit`) | 53/53 (M1: + redaction, query safety incl. educational sensitive topics and self-harm, injection, language, intent endpoint with a fake model) |
+| Journey (`node e2e/journey.mjs`), WhatsApp/YouTube as local fixtures at their real hostnames | 41/41 checks incl. 17 M1 goal checks (`--only goals`): markup-free labels with the arrow on the same link, self-harm helpline answer |
 | Regression (`node e2e/run.mjs`, ×2) | form 8/8, settings A 3/3, settings B 3/3, Google-Forms structure 3/3, voice 3/3 steps correct; wrong clicks recovered; no typed values in planner payloads; arrow anchor error ≤ 0.5 px |
-| Real sites (`--only real`, logged out, headless) | youtube.com: arrow on the real search box after readiness. web.whatsapp.com: real "Scan to log in" page detected, no planner calls; on runs where WhatsApp served its unsupported-browser page to headless Chrome, Koode said the page did not finish loading |
+| Real sites (`--only real`, logged out, headless, mock planner) | M1: youtube.com results opened directly for an English and a Malayalam query (30 videos), arrow on a video, opened → done by rule. 0.3.0: arrow on the real search box after readiness. web.whatsapp.com: real "Scan to log in" page detected, no planner calls; on runs where WhatsApp served its unsupported-browser page to headless Chrome, Koode said the page did not finish loading |
 
 Planner payload, first request (estimated prompt tokens = 443 + 0.382 × user-message chars, fitted on 8 logged
 real-Groq requests):
@@ -68,7 +87,8 @@ real-Groq requests):
 | Practice form / Google-Forms structure / settings | unchanged (≈ 1,220 / 960 / 650) | unchanged |
 
 ## Not verified
-- **Real Groq** planning on YouTube and the practice form from this branch (quota preserved).
+- **Real Groq** planning on YouTube and the practice form from this branch (quota preserved), and the real-Groq
+  **intent planner** (`/api/intent`): query quality, Malayalam/English split, service detection, injection resistance.
 - **Real Sarvam** STT/TTS through the side panel, and a real human voice (mock speech returns queued transcripts).
 - **Chrome's microphone prompt inside a real side panel**: tests open the panel page as a window with
   auto-granted fake media. The `mic.html` fallback has not been exercised in a real side panel.

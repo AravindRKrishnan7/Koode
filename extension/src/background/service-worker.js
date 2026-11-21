@@ -1,7 +1,7 @@
 // Background service worker: proxies planner and voice requests to the Koode backend
 // (keeps API keys off the page/extension), stores per-tab task state, and connects the
 // browser-level side panel with the in-page guide (navigation, progress, spoken replies, exit).
-importScripts('../shared/sites.js');
+importScripts('../shared/goals.js', '../shared/sites.js');
 const DEFAULT_BACKEND = 'http://localhost:8787';
 
 async function backendUrl() {
@@ -61,6 +61,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg && msg.type) {
       case 'koode:plan': return api('/api/plan', msg.payload);
+      case 'koode:intent': return api('/api/intent', msg.payload);
+      case 'koode:youtubeSearch': return youtubeSearch(msg.search, msg.goal, msg.voice, tabId, !!pageTab);
       case 'koode:stt': return api('/api/stt', msg.payload);
       case 'koode:tts': return api('/api/tts', msg.payload);
       case 'koode:health': return health();
@@ -128,11 +130,44 @@ async function navigate(siteId, goal, voice, tabId, fromPage) {
   if (!fromPage) await chrome.tabs.sendMessage(tabId, { type: 'koode:stop', quiet: true }).catch(() => {});
   await chrome.storage.session.set({ ['nav:' + tabId]: new URL(site.url).origin });
   // `arrival` lets the new page report when it is ready even without a follow-up goal.
+  goal = self.KoodeGoals.redact(String(goal || '')).text;
   await chrome.storage.session.set({ ['task:' + tabId]: { goal: goal || '', voice: !!voice, history: [], step: 0, url: site.url, fresh: true, arrival: site.id } });
   await chrome.storage.session.remove('progress:' + tabId);
   toPanels(tabId, { type: 'navigating', site: { id: site.id, name: site.name, ml: site.ml }, goal: goal || '' });
   await chrome.tabs.update(tabId, { url: site.url });
   return { ok: true, tabId, site: site.name };
+}
+
+// Automatic YouTube search: the service worker builds the results URL itself from a re-validated plain-text
+// query (no URL is ever accepted in a message), then the page continues with grounded guidance.
+// If the current page has input the user typed (e.g. a half-filled form), the results open in a new tab
+// so nothing is lost.
+async function youtubeSearch(search, goal, voice, tabId, fromPage) {
+  const G = self.KoodeGoals;
+  const q = G.cleanQuery(search && search.query);
+  if (!q.ok) return { error: 'invalid search query', reason: q.reason };
+  const url = G.youtubeResultsUrl(q.query);
+  const fb = search.fallback ? G.cleanQuery(search.fallback) : null;
+  const s = { query: q.query, fallback: fb && fb.ok && fb.query !== q.query ? fb.query : null, lang: G.LANGS[search.lang] ? search.lang : 'ml',
+    attempt: search.attempt === 2 ? 2 : 1 };
+  s.lazyFallback = !!search.lazyFallback && !s.fallback && s.attempt === 1;
+  const task = { goal: G.redact(String(goal || '')).text.slice(0, 300) || q.query, voice: !!voice, history: [], step: 0, url, fresh: true, arrival: 'youtube', search: s };
+  if (!tabId) return { error: 'no tab' };
+  const unsaved = await chrome.tabs.sendMessage(tabId, { type: 'koode:hasUnsavedInput' }).then((r) => !!(r && r.unsaved), () => false);
+  if (unsaved) {
+    const from = await chrome.tabs.get(tabId).catch(() => null);
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...(from ? { windowId: from.windowId, index: from.index + 1, openerTabId: from.id } : {}) });
+    await chrome.storage.session.set({ ['nav:' + tab.id]: new URL(url).origin, ['task:' + tab.id]: task });
+    toPanels(tab.id, { type: 'navigating', site: { id: 'youtube', name: 'YouTube', ml: 'യൂട്യൂബ്' }, goal: task.goal });
+    await chrome.tabs.update(tab.id, { url });
+    return { ok: true, tabId: tab.id, newTab: true, query: s.query, url };
+  }
+  if (!fromPage) await chrome.tabs.sendMessage(tabId, { type: 'koode:stop', quiet: true }).catch(() => {});
+  await chrome.storage.session.set({ ['nav:' + tabId]: new URL(url).origin, ['task:' + tabId]: task });
+  await chrome.storage.session.remove('progress:' + tabId);
+  toPanels(tabId, { type: 'navigating', site: { id: 'youtube', name: 'YouTube', ml: 'യൂട്യൂബ്' }, goal: task.goal });
+  await chrome.tabs.update(tabId, { url });
+  return { ok: true, tabId, newTab: false, query: s.query, url };
 }
 
 async function startOnTab(goal, voice, tabId) {

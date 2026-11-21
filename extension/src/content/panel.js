@@ -184,8 +184,17 @@
     host.dataset.koodeSpeaking = String(!!on);
   }
 
-  function setNotice(text) {
+  // Optional action: one button under the notice (e.g. "show videos about it").
+  function setNotice(text, action) {
     els.notice.textContent = text || '';
+    if (text && action) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = action.label; b.className = 'offer';
+      b.addEventListener('click', action.run);
+      els.notice.appendChild(document.createElement('br'));
+      els.notice.appendChild(b);
+      host.dataset.koodeOffer = action.id || 'offer';
+    } else delete host.dataset.koodeOffer;
     els.notice.classList.toggle('hidden', !text);
     if (text) host.dataset.koodeNotice = text; else delete host.dataset.koodeNotice;
   }

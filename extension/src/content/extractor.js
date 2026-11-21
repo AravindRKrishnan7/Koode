@@ -9,8 +9,15 @@
   let registry = new Map(); // id -> { el, anchor }
   let currentSnapshotId = null;
 
+  // Some sites put literal markup into accessible names (YouTube snippets: "<b>സോളാർ</b>&nbsp;…").
+  // Only the label text is cleaned; elements are still resolved by their snapshot ID.
+  const ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'" };
+  const stripMarkup = (s) => s
+    .replace(/<\/?[a-z][a-z0-9-]*(?:\s[^<>]*)?\/?>/gi, ' ')
+    .replace(/&(nbsp|amp|lt|gt|quot|apos|#39);/gi, (_, e) => ENTITIES[e.toLowerCase()])
+    .replace(/&#(\d{1,6});/g, (_, n) => { const c = Number(n); return c > 31 && c < 0x110000 ? String.fromCodePoint(c) : ' '; });
   const clean = (s, max = C.MAX_LABEL) =>
-    (s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+    stripMarkup(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
   const humanize = (s) => clean((s || '').replace(/[_\-.]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2'));
 

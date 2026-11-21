@@ -7,7 +7,11 @@
 //   { type: 'already_here', site }                     asked to open the site that is already open (no further goal)
 //   { type: 'guide', goal }                            guide on the current page with the grounded planner
 //   { type: 'need_link' }                              "open Google Forms" without a form: the user must open their form link
-//   { type: 'which_site', goal }                       current tab can't be guided and no supported site was named
+//   { type: 'youtube_search', search, goal }           rule fast path: a video/search request with a clear topic →
+//                                                      search = { query, lang, fallback:null, lazyFallback } (no model)
+//   { type: 'intent', goal }                           open-ended request (no site named, or a learning request on a page
+//                                                      that is not about it): ask the intent planner (/api/intent)
+// Text is expected to be redacted already (KoodeGoals.redact).
 (() => {
   const SITES = [
     { id: 'whatsapp', name: 'WhatsApp Web', ml: 'വാട്സ്ആപ്പ്', url: 'https://web.whatsapp.com/', host: 'web.whatsapp.com',
@@ -105,6 +109,47 @@
     return s.replace(/[\s&,]+$/, '').length >= 2 ? s : '';
   }
 
+  // ---- YouTube search rule (no model) ----
+  // Search verbs ("തിരയൂ", "search for") count only on YouTube or when YouTube is named: on WhatsApp
+  // "ഒരാളെ തിരയണം" means its own search box. Video words ("വീഡിയോകൾ", "videos") count anywhere.
+  const SEARCH_EN = /(?<![a-z])(?:search(?:ing)?(?: for| about)?|find(?: me)?|look(?:ing)? for|look up)(?![a-z])/g;
+  const SEARCH_ML = new RegExp('(?<![' + ML + '])(?:തിരയ|തിരഞ്ഞ|സെർച്ച്|സേർച്ച്|കണ്ടെത്ത)[' + ML + ']*(?:\\s+ചെയ്[' + ML + ']*)?', 'g');
+  const VIDEO = new RegExp('(?<![a-z])videos?(?![a-z])|(?<![' + ML + '])(?:വീഡിയോ|വിഡിയോ|വീഡിയൊ)[' + ML + ']*', 'g');
+  const WATCH = new RegExp('(?<![a-z])(?:i want to (?:watch|see|listen to)|i want|want to (?:watch|see|listen to)|show me|watch|see|listen to|listen|play|some|me)(?![a-z])|(?<![' + ML + '])(?:കാണ|കാണി|കേൾക്ക|കേൾപ്പ|പ്ലേ|വേണ|തരൂ|എനിക്ക്|കുറച്ച്|ചില)[' + ML + ']*', 'g');
+  const WATCH_VERB = new RegExp('(?<![a-z])(?:watch|see|listen(?: to)?|play)(?![a-z])|(?<![' + ML + '])(?:കാണ|കേൾക്ക|പ്ലേ)[' + ML + ']*', 'g');
+  // Postpositions that only link the topic to "video" ("…യെ കുറിച്ചുള്ള വീഡിയോ", "videos about …").
+  const LINK = new RegExp('(?<![a-z])(?:about|on|of|for|related to)(?![a-z])|(?<![' + ML + '])(?:കുറിച്ച്|കുറിച്ചുള്ള|കുറിച്ചു|പറ്റി|പറ്റിയുള്ള|സംബന്ധിച്ച|സംബന്ധിച്ചുള്ള|ഉള്ള|ഉളള|ആയ)(?![' + ML + '])', 'g');
+  // Player controls and actions on a video that is already open are goals for the page, not searches.
+  const NOT_SEARCH = new RegExp('(?<![a-z])(?:stop|pause|resume|mute|unmute|volume|full ?screen|skip|like|dislike|subscribe|share|comment|download|upload|record|call|send|close|exit|speed|captions?|subtitles?|quality|settings|delete|remove)(?![a-z])' +
+    '|(?<![a-z])(?:this|that|these|current|my)(?![a-z])' +
+    '|(?<![' + ML + '])(?:ഈ|ആ|ഇത്|അത്|ഇതിന്റെ|അതിന്റെ|എന്റെ)(?![' + ML + '])' +
+    '|(?<![' + ML + '])(?:നിർത്ത|പോസ്|ശബ്ദം|ഫുൾ|സബ്സ്ക്രൈബ്|ലൈക്ക്|ഷെയർ|അയയ്ക്ക|അയക്ക|അയച്ച|കോൾ|ഡൗൺലോഡ്|അപ്‌ലോഡ്|റെക്കോർഡ്|ഡിലീറ്റ്)', '');
+  // Learning requests without a clear search phrase go to the intent planner.
+  const LEARN = new RegExp('(?<![a-z])(?:learn|learning|how to|how do i|teach me|tutorials?|classes?|recipe)(?![a-z])|(?<![' + ML + '])(?:പഠിക്ക|പഠിപ്പ|പഠനം|എങ്ങനെ|ട്യൂട്ടോറിയൽ|ക്ലാസ്|റെസിപ്പി|ഉണ്ടാക്കുന്ന)', '');
+
+  // t: normalised text. opts.searchVerbs: search verbs count. Returns { query, lang, fallback, lazyFallback } or null.
+  function searchFrom(t, opts = {}) {
+    if (!t || NOT_SEARCH.test(t)) return null;
+    const verbs = opts.searchVerbs ? findAll(SEARCH_EN, t).concat(findAll(SEARCH_ML, t)) : [];
+    const vids = findAll(VIDEO, t);
+    // With YouTube named, "watch / listen to …" also asks for a search ("യൂട്യൂബിൽ പോയി പാട്ട് കേൾക്കണം").
+    const plays = opts.watchVerbs ? findAll(WATCH_VERB, t) : [];
+    if (!verbs.length && !vids.length && !plays.length) return null;
+    const G = globalThis.KoodeGoals;
+    const lang = G ? G.detectLang(t) : { lang: 'ml', cuts: [] };
+    let q = cleanRest(t, verbs.concat(vids, findAll(WATCH, t), lang.cuts));
+    for (let i = 0; i < 2; i++) q = q.replace(LINK_EDGE, '').trim();
+    q = q.replace(new RegExp(LINK.source, 'g'), (m, off, all) => (off === 0 || off + m.length === all.length ? ' ' : m)).replace(/\s+/g, ' ').trim();
+    const c = G ? G.cleanQuery(q) : { ok: !!q, query: q };
+    if (!c.ok) return null;
+    let query = c.query;
+    if (lang.lang !== 'ml' && lang.lang !== 'en' && G) query = G.withLang(query, lang.lang);
+    // The user's own words are searched as said; for a Malayalam query with thin results, Koode asks the
+    // intent planner for an English fallback only then (one model call, only when needed).
+    return { query, lang: lang.lang, fallback: null, lazyFallback: lang.lang === 'ml' && /[\u0D00-\u0D7F]/.test(query) };
+  }
+  const LINK_EDGE = new RegExp('^(?:about|on|of|for)\\s+|\\s+(?:about|on|of|for)$|(?<![' + ML + '])(?:കുറിച്ച്|കുറിച്ചുള്ള|പറ്റി|പറ്റിയുള്ള|ഉള്ള|ആയ)$', 'g');
+
   // ctx.siteId: id of the site open in the tab (forUrl(url).id), or null for New Tab / pages Koode can't guide.
   function classify(text, ctx = {}) {
     const t = normalize(text).replace(ADDRESS, '');
@@ -128,12 +173,22 @@
       const cuts = [pick];
       if (pick.verb) cuts.push(pick.verb);
       const goal = cleanRest(t, cuts);
+      // "YouTube-ൽ … തിരയൂ" / "open YouTube and search for …": open the results page directly.
+      if (pick.site.id === 'youtube' && goal) {
+        const search = searchFrom(goal, { searchVerbs: true, watchVerbs: true });
+        if (search) return { type: 'youtube_search', search, goal };
+      }
       if (pick.site.id === here) return goal ? { type: 'guide', goal } : { type: 'already_here', site: pick.site };
       return { type: 'navigate', site: pick.site, goal };
     }
     const gf = GOOGLE_FORM_RES.some((re) => findAll(re, t).length);
     if (gf && here !== 'googleforms' && opens.length && cleanRest(t, opens.concat(GOOGLE_FORM_RES.flatMap((re) => findAll(re, t)))) === '') return { type: 'need_link' };
-    if (!guidable) return { type: 'which_site', goal: t };
+    const search = searchFrom(t, { searchVerbs: here === 'youtube' });
+    if (search) return { type: 'youtube_search', search, goal: String(text).trim() };
+    if (!guidable) return { type: 'intent', goal: String(text).trim() };
+    // A learning request on a page that isn't about it ("തെങ്ങ് കയറാൻ പഠിക്കണം" on WhatsApp): the intent
+    // planner decides; "how do I fill this form" (refers to the page) stays a goal for this page.
+    if (LEARN.test(t) && !NOT_SEARCH.test(t)) return { type: 'intent', goal: String(text).trim() };
     return { type: 'guide', goal: String(text).trim() };
   }
 
@@ -161,7 +216,7 @@
     return /^\/forms\/(?:u\/\d+\/)?d\/(?:e\/)?[\w-]+\/(?:viewform|formResponse)\/?$/.test(p);
   }
 
-  const api = { SITES, PRIVATE, GOOGLE_FORMS, classify, match, forUrl, normalize, isGoogleFormRespondentPath };
+  const api = { SITES, PRIVATE, GOOGLE_FORMS, classify, searchFrom, match, forUrl, normalize, isGoogleFormRespondentPath };
   // In a content script: extend the private selector for this site (constants.js loads first).
   const K0 = typeof window !== 'undefined' && globalThis.Koode;
   if (K0 && K0.constants && typeof location !== 'undefined' && PRIVATE[location.host] && !K0.constants.sitePrivate) {

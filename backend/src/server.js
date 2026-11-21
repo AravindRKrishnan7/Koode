@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { planStep } from './planner.js';
+import { planIntent } from './intent.js';
+import { queueIntents } from './providers/mock-intent.js';
 import { transcribe, speak } from './providers/sarvam-speech.js';
 import { mockTranscribe, mockSpeak, queueTranscripts } from './providers/mock-speech.js';
 
@@ -35,11 +37,11 @@ function readBody(req, limit = 512 * 1024) {
 }
 
 // Audit log of exactly what was sent to the model (sanitised request) + result.
-function audit(entry) {
+function audit(entry, file = 'plan-requests.jsonl') {
   if (!cfg.logPayloads) return;
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
-    fs.appendFileSync(path.join(LOG_DIR, 'plan-requests.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
+    fs.appendFileSync(path.join(LOG_DIR, file), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
   } catch (e) {
     console.error('[audit] write failed', e.message);
   }
@@ -70,7 +72,27 @@ const server = http.createServer(async (req, res) => {
     try { return send(res, 200, { queued: queueTranscripts(JSON.parse(await readBody(req, 16 * 1024)).transcripts) }); }
     catch (e) { return send(res, 400, { error: e.message }); }
   }
+  // Test-only (mock planner, local non-browser client): queue raw "model outputs" for /api/intent.
+  if (url.pathname === '/test/intent-queue' && req.method === 'POST') {
+    if (cfg.provider !== 'mock' || origin) return send(res, 403, { error: 'mock planner only' });
+    try { return send(res, 200, { queued: queueIntents(JSON.parse(await readBody(req, 16 * 1024)).outputs) }); }
+    catch (e) { return send(res, 400, { error: e.message }); }
+  }
   if (url.pathname === '/' ) return send(res, 302, '', { Location: '/demo/' });
+  if (url.pathname === '/api/intent' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req, 16 * 1024));
+      const { req: sanitized, result } = await planIntent(body, cfg);
+      audit({ request: sanitized, result }, 'intent-requests.jsonl');
+      console.log(`[intent] ${result.type} ${result.latency_ms}ms ${cfg.provider}/${cfg.model} goal_chars=${sanitized.goal.length} redacted=${sanitized.redacted.length}${result.rejected ? ' rejected=' + result.rejected : ''}`);
+      return send(res, 200, result);
+    } catch (e) {
+      console.error('[intent] error', e.message);
+      audit({ error: e.message, code: e.code }, 'intent-requests.jsonl');
+      if (e.code === 'rate_limited') return send(res, 503, { error: e.message, code: e.code, retry_after_ms: e.retryAfterMs, scope: e.scope });
+      return send(res, e.message === 'goal required' || e.message === 'invalid body' ? 400 : 502, { error: e.message });
+    }
+  }
   if (url.pathname.startsWith('/demo')) return serveStatic(req, res, url.pathname);
   if (url.pathname === '/api/plan' && req.method === 'POST') {
     try {

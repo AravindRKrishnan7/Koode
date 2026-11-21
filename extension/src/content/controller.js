@@ -5,6 +5,8 @@
   if (K.started) return; // already injected on this page
   const C = K.constants;
   const { extractor, overlay, monitor, panel, voice } = K;
+  const G = K.goals;
+  const THIN_RESULTS = 3; // fewer videos than this on a results page → try the fallback query
 
   const S = { goal: '', voice: false, history: [], step: 0, target: null, lastPlan: null, lastEvent: null, token: 0, invalidRetries: 0, rateRetries: 0, active: false };
   const RATE_RETRIES = 2; // automatic retries after a model rate limit, per step
@@ -20,7 +22,7 @@
   panel.setInstruction = (i = {}) => { setInstruction0(i); mirror.ml = i.ml || ''; mirror.en = i.en || ''; progress(); };
 
   function persist(extra = {}) {
-    const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, ...extra } : null;
+    const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, search: S.search || undefined, ...extra } : null;
     send({ type: task ? 'koode:saveTask' : 'koode:clearTask', task }).catch(() => {});
   }
 
@@ -52,7 +54,7 @@
     // Normal steps take < 1 s; a longer wait is almost always the model's free-tier rate limit.
     const slow = setTimeout(() => { if (my === S.token) panel.setNotice('⏳ ഒരു നിമിഷം — AI സേവനം തിരക്കിലാണ്. · The AI service is busy; this can take up to 15 s.'); }, SLOW_NOTICE_MS);
     try {
-      resp = await send({ type: 'koode:plan', payload: { goal: S.goal, snapshot: snap, history: S.history.slice(-12), last_event: lastEvent || null } });
+      resp = await send({ type: 'koode:plan', payload: { goal: plannerGoal(), snapshot: snap, history: S.history.slice(-12), last_event: lastEvent || null } });
     } catch (e) {
       resp = { error: String(e && e.message || e) };
     } finally {
@@ -107,7 +109,32 @@
   // nothing useful to plan on. A local rule (no AI, no network) points at the search control; after the
   // user types a name, Koode hands over: the user picks the contact and writes/sends messages themselves.
   const WA_RULE = { provider: 'rule', model: 'WhatsApp privacy rule (no AI)', mock: false };
+  // The goal the step planner sees. After Koode opened YouTube results, it says so (and quotes the query).
+  function plannerGoal() {
+    if (!S.search || here()?.id !== 'youtube') return S.goal;
+    return (S.goal + ` (YouTube search results for "${S.search.query}" are open: guide the user to open one relevant video.)`).slice(0, 300);
+  }
+
+  // YouTube searches opened by Koode: a video page means the user opened a video (done, no model call).
+  const YT_RULE = { provider: 'rule', model: 'YouTube search rule (no AI)', mock: false };
+  function youtubeRule() {
+    if (!S.search || here()?.id !== 'youtube') return null;
+    if (/^\/(watch|shorts\/)/.test(location.pathname)) {
+      return { status: 'done', rule: 'yt_watch', planner: YT_RULE,
+        instruction_ml: 'വീഡിയോ തുറന്നു. ഇനി കാണാം! മറ്റൊന്ന് വേണമെങ്കിൽ പറയൂ.',
+        instruction_en: 'The video is open. Enjoy! Ask again if you want something else.' };
+    }
+    if (location.pathname === '/results' && countVideos() === 0) {
+      return { status: 'cannot_find', rule: 'yt_no_results', planner: YT_RULE,
+        instruction_ml: `“${S.search.query}” എന്നതിന് വീഡിയോകൾ കണ്ടില്ല. മറ്റൊരു രീതിയിൽ പറഞ്ഞുനോക്കൂ.`,
+        instruction_en: `No videos were found for “${S.search.query}”. Try saying it another way.` };
+    }
+    return null;
+  }
+
   function localPlan(snap) {
+    const yt = youtubeRule();
+    if (yt) return yt;
     if (here()?.id !== 'whatsapp') return null;
     if (S.history.some((h) => h.outcome === 'verified' && h.rule === 'wa_search')) {
       return { status: 'done', rule: 'wa_handoff', planner: WA_RULE,
@@ -367,9 +394,26 @@
 
   // A request typed or spoken in the in-page panel: "open YouTube…" and "exit" use the same rule-based
   // routing as the side panel (no model quota); everything else is a goal for this page.
-  function route(text, opts = {}) {
+  function route(text0, opts = {}) {
+    // Personal numbers are removed before routing, so they never reach a model, a URL or the task store.
+    const red = G.redact(text0);
+    const text = red.text;
+    const privacy = G.redactionNotice(red.found);
+    if (privacy) { panel.log('removed personal data from the request: ' + red.found.join(', ')); host().dataset.koodeRedacted = red.found.join(','); }
     const c = K.sites.classify(text, { siteId: here()?.id });
     panel.log('request routed: ' + c.type + (c.site ? ' ' + c.site.id : ''));
+    host().dataset.koodeRoute = c.type;
+    if (c.type !== 'exit' && G.safety(text) === 'self_harm') {
+      host().dataset.koodeRoute = 'self_harm';
+      stop(true, true);
+      panel.setState('idle');
+      panel.setInstruction({ ml: G.MSG.selfHarm.ml, en: G.MSG.selfHarm.en });
+      say(G.MSG.selfHarm.ml, opts.voice);
+      return;
+    }
+    if (c.type === 'youtube_search') return youtubeSearch(c.search, c.goal, opts, privacy);
+    if (c.type === 'intent') return askIntent(text, opts, privacy);
+    if (privacy) { panel.setNotice(privacy.ml + ' · ' + privacy.en); say(privacy.ml, opts.voice); }
     if (c.type === 'exit') return exit({ voice: opts.voice });
     if (c.type === 'navigate') {
       stop(true, true);
@@ -393,6 +437,107 @@
       return;
     }
     start(c.goal || text, opts);
+  }
+
+  const host = () => document.getElementById('koode-panel-root') || document.documentElement;
+
+  // Opens YouTube results for a validated query (the service worker builds the URL). A page with typed
+  // input keeps its tab: the results open in a new one.
+  async function youtubeSearch(search, goal, opts = {}, privacy = null) {
+    // Stop first (monitor off, no persist) so this page can't overwrite the new task while it unloads.
+    stop(true, true);
+    const m = G.searchText(search.query);
+    panel.setState('loading');
+    panel.setInstruction({ ml: (privacy ? privacy.ml + ' ' : '') + m.ml, en: (privacy ? privacy.en + ' ' : '') + m.en });
+    say((privacy ? privacy.ml + ' ' : '') + m.ml, opts.voice);
+    host().dataset.koodeSearch = search.query;
+    const r = await send({ type: 'koode:youtubeSearch', search, goal, voice: !!opts.voice }).catch((e) => ({ error: String(e && e.message || e) }));
+    if (!r || r.error) return fail('Could not search YouTube: ' + (r && r.error || 'no response'), 'യൂട്യൂബിൽ തിരയാനായില്ല.');
+    if (r.newTab) {
+      panel.setState('idle');
+      panel.setInstruction({ ml: 'നിങ്ങൾ ടൈപ്പ് ചെയ്തത് നഷ്ടപ്പെടാതിരിക്കാൻ യൂട്യൂബ് പുതിയ ടാബിൽ തുറന്നു.', en: 'YouTube opened in a new tab so what you typed on this page is kept.' });
+      panel.log('search opened in a new tab (this page has typed input)');
+      host().dataset.koodeNewTab = 'true';
+    }
+  }
+
+  // Open-ended request: the intent planner nominates a query or explains what Koode can't do yet.
+  async function askIntent(text, opts = {}, privacy = null) {
+    panel.setState('finding');
+    panel.setInstruction({ ml: 'നിങ്ങൾക്ക് എന്താണ് വേണ്ടതെന്ന് മനസ്സിലാക്കുന്നു…', en: 'Working out what you need…' });
+    const resp = await send({ type: 'koode:intent', payload: { goal: text, site_id: here()?.id || null } }).catch((e) => ({ error: String(e && e.message || e) }));
+    if (resp && resp.planner) panel.setPlanner(resp.planner.model || resp.planner.provider, resp.planner.mock, false);
+    panel.log('intent: ' + ((resp && (resp.type || resp.code || resp.error)) || 'no response'));
+    host().dataset.koodeIntent = (resp && (resp.type || resp.code)) || 'error';
+    const a = G.intentToAction(resp, { guidable: true });
+    if (a.kind === 'youtube_search') return youtubeSearch(a.search, text, opts, privacy);
+    if (a.kind === 'guide') return start(text, opts);
+    panel.setState('idle');
+    const lead = privacy ? privacy.ml + ' ' : '';
+    panel.setInstruction({ ml: lead + a.ml, en: (privacy ? privacy.en + ' ' : '') + a.en });
+    say(lead + a.ml, opts.voice);
+    if (a.offer) panel.setNotice(a.offerLabel.ml + ' · ' + a.offerLabel.en, { label: '▶ ' + a.offerLabel.ml, id: 'koode-offer', run: () => youtubeSearch(a.offer, text, opts) });
+  }
+
+  // Counts distinct video links on a YouTube results page (presence only; nothing is read or sent).
+  function countVideos() {
+    const hrefs = new Set();
+    for (const a of document.querySelectorAll('a[href*="/watch?v="], a[href^="/shorts/"]')) {
+      if (a.closest('#koode-panel-root,#koode-overlay-root') || !extractor.isRendered(a)) continue;
+      hrefs.add((a.getAttribute('href') || '').split('&')[0]);
+    }
+    return hrefs.size;
+  }
+  async function waitForVideos(maxMs = 5000) {
+    const t0 = performance.now();
+    let n = countVideos();
+    while (n < THIN_RESULTS && performance.now() - t0 < maxMs) { await new Promise((r) => setTimeout(r, 250)); n = countVideos(); }
+    return n;
+  }
+
+  // Thin results for the first query: search again with the fallback (English words + the content
+  // language, e.g. "coconut tree climbing malayalam"). Returns true if a new search was started.
+  async function maybeFallback(my) {
+    const sr = S.search;
+    if (!sr || sr.attempt !== 1 || location.pathname !== '/results') return false;
+    const n = await waitForVideos();
+    if (my !== S.token) return true;
+    host().dataset.koodeResults = String(n);
+    panel.log(`results page: ${n} videos for the first query`);
+    if (n >= THIN_RESULTS) return false;
+    let fallback = sr.fallback;
+    if (!fallback && sr.lazyFallback) {
+      // The user's own Malayalam words found little: one intent call for English words (only now).
+      const resp = await send({ type: 'koode:intent', payload: { goal: sr.query + ' വീഡിയോ', site_id: 'youtube' } }).catch(() => null);
+      if (my !== S.token) return true;
+      const plan = resp && !resp.error && (resp.type === 'youtube_search' || resp.type === 'service') ? G.planSearch({ ...resp, query_ml: sr.query, content_lang: sr.lang }) : null;
+      fallback = plan && plan.fallback;
+      panel.log('fallback query from intent: ' + (fallback ? fallback.length + ' chars' : 'none'));
+    }
+    if (!fallback || fallback === sr.query) return false;
+    const m = G.searchText(fallback);
+    panel.setInstruction({ ml: 'കുറച്ച് വീഡിയോകൾ മാത്രം കിട്ടി. ' + m.ml, en: 'Only a few videos came up. ' + m.en });
+    host().dataset.koodeFallback = fallback;
+    const { goal, voice: v } = S;
+    stop(true, true);
+    say('കുറച്ച് വീഡിയോകൾ മാത്രം കിട്ടി. ' + m.ml, v);
+    const r = await send({ type: 'koode:youtubeSearch', search: { query: fallback, lang: sr.lang, attempt: 2 }, goal, voice: v }).catch(() => null);
+    if (!r || r.error) fail('Could not search YouTube again: ' + (r && r.error || 'no response'), 'യൂട്യൂബിൽ വീണ്ടും തിരയാനായില്ല.');
+    return true;
+  }
+
+  // True if the user has typed or chosen something on this page that a navigation would lose.
+  // Search boxes don't count. Only a yes/no leaves this function; values are never read out.
+  function hasUnsavedInput() {
+    for (const el of document.querySelectorAll('input, textarea, select')) {
+      if (el.closest('#koode-panel-root,#koode-overlay-root,[role=search],form[action*="search"],form[action="/results"]')) continue;
+      const type = (el.type || '').toLowerCase();
+      if (['hidden', 'submit', 'button', 'reset', 'image', 'search', 'file'].includes(type) || /search|query|^q$/i.test(el.name || el.id || '')) continue;
+      if (el.tagName === 'SELECT') { if (Array.from(el.options).some((o) => o.selected !== o.defaultSelected)) return true; continue; }
+      if (type === 'checkbox' || type === 'radio') { if (el.checked !== el.defaultChecked) return true; continue; }
+      if (el.value !== el.defaultValue) return true;
+    }
+    return false;
   }
 
   // Clean exit: stop guiding, forget the task, say goodbye, close the panel. The launcher stays.
@@ -419,9 +564,10 @@
     panel.setInstruction({ ml: '🎤 അമർത്തിപ്പിടിച്ച് ഒന്നുകൂടി പറയൂ.', en: 'Hold 🎤 and say it again.' });
   }
 
-  function start(goal, opts = {}) {
+  function start(goal0, opts = {}) {
     stop(true);
-    Object.assign(S, { goal, voice: !!opts.voice, history: [], step: 0, active: true, invalidRetries: 0, rateRetries: 0 });
+    const goal = G.redact(goal0).text;
+    Object.assign(S, { goal, voice: !!opts.voice, history: [], step: 0, active: true, invalidRetries: 0, rateRetries: 0, search: null });
     ttsWarned = false;
     panel.setNotice('');
     panel.setGoal(goal);
@@ -433,7 +579,7 @@
   // A page opened on request: wait until it is ready (and the user has logged in, on WhatsApp), then
   // continue the carried-over goal, or just report that the site is open.
   async function resume(task) {
-    Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0, rateRetries: 0 });
+    Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0, rateRetries: 0, search: task.search || null });
     const my = ++S.token;
     let sidePanel = false;
     try { sidePanel = !!(await send({ type: 'koode:panelOpen' })).open; } catch (_) {}
@@ -491,6 +637,9 @@
       progress({ arrived: true });
       return;
     }
+    // Koode opened YouTube results: if they are thin, search once more with the fallback query.
+    if (S.search && (await maybeFallback(my))) return;
+    if (my !== S.token) return;
     const p = task.pending;
     if (p && p.type === 'navigation') {
       if (location.href !== p.from) {
@@ -537,5 +686,5 @@
     say(S.lastPlan.instruction_ml);
   }
 
-  K.controller = { start, route, exit, stop, resume, repeat, micDown, micUp, confirmVoice, retryVoice, state: S };
+  K.controller = { start, route, exit, stop, resume, repeat, micDown, micUp, confirmVoice, retryVoice, hasUnsavedInput, state: S };
 })();

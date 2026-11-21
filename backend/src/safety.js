@@ -1,5 +1,6 @@
 // Server-side allowlist sanitiser. Rebuilds the request from known-safe fields
 // only, so anything unexpected (e.g. a `value` field) never reaches the model.
+import { redact } from './goals.js';
 const MAX_CANDIDATES = 150;
 const MAX_HISTORY = 12;
 
@@ -45,7 +46,9 @@ function sanitizeCandidate(c) {
 
 export function sanitizePlanRequest(body) {
   if (!body || typeof body !== 'object') throw new Error('invalid body');
-  const goal = str(body.goal, 300);
+  // Personal numbers in the goal (phone, Aadhaar, licence…) are replaced before the model sees it;
+  // the extension redacts too, this is the second line of defence.
+  const goal = str(body.goal, 300) && redact(str(body.goal, 300)).text;
   if (!goal) throw new Error('goal required');
   const snap = body.snapshot || {};
   const candidates = (Array.isArray(snap.candidates) ? snap.candidates : []).slice(0, MAX_CANDIDATES).map(sanitizeCandidate).filter(Boolean);
