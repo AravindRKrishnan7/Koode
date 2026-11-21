@@ -9,7 +9,8 @@ Two procedures: a **real-microphone manual test** (do this once on the demo lapt
 ```bash
 brew install node@20 git                 # Node 20+ (check: node -v)
 git clone https://github.com/AravindRKrishnan7/Koode.git ~/Koode
-cd ~/Koode && git checkout koode-judging-final
+cd ~/Koode          # main = final submission (YouTube goals, Sarathi services, new side panel)
+# git checkout koode-judging-final   # earlier frozen build (core guidance loop), if you need it
 ```
 
 Store the keys in the macOS Keychain (typed at a hidden prompt; never in a file, shell history, or the repo):
@@ -55,6 +56,9 @@ On judging day: no E2E runs, no repeated rehearsals on Groq. Rehearse in mock mo
 
 ## Known-good versions
 
+- `main`: final submission. Mock- and live-page-verified; see the README "Verification status" table for what has
+  run on real Groq/Sarvam.
+
 - `koode-judging-final`: the judging build (features frozen). Real-Groq voice run on this code: speech → confirm → correct arrow → verified click → correct next arrow.
 - `koode-groq-verified`: earlier commit with the full real-Groq suite passed (voice 3/3, 51/51 steps); fallback if the judging build misbehaves.
 
@@ -91,9 +95,9 @@ Record what Koode heard for 3–5 different phrasings (e.g. *"ഡാർക്ക
 | “Press Repeat to hear the instruction” | Chrome blocked audio on a freshly loaded page; press **Repeat** once. |
 | Mic button dimmed | Voice not configured (`"voice":false` in `/health`) or the page isn't https/localhost; typing still works. |
 
-## Companion journey rehearsal (feature branch, not the judging build)
+## Companion journey rehearsal (main, not the earlier `koode-judging-final` build)
 
-On `claude-koode-next` (not `koode-judging-final`): New Tab → WhatsApp → YouTube → practice form → Exit from the
+On `main`: New Tab → WhatsApp → YouTube → practice form → Exit from the
 side panel. Steps and phrases: [`COMPANION.md`](COMPANION.md). Rehearse quota-free with
 `KOODE_SPEECH=mock scripts/start-rehearsal.sh` (typed requests work as-is; the mock STT returns transcripts queued via
 `POST /test/stt-queue`), or with real Sarvam voice by leaving `KOODE_SPEECH` unset. Before the first real-voice rehearsal:
@@ -104,7 +108,7 @@ Log in to WhatsApp Web on the demo laptop beforehand (Koode never logs in for th
 
 Pre-flight checklist (before the judges arrive):
 
-1. `git describe --tags` shows `koode-judging-final`; Koode card reloaded in `chrome://extensions`.
+1. `git log -1 --oneline` shows the submitted commit (or `git describe --tags` shows `koode-judging-final` if you are demoing that build); Koode card reloaded in `chrome://extensions`.
 2. No Groq use in the last hour (no tests, no Groq rehearsals); the daily quota refills slowly.
 3. `scripts/start-judging.sh` prints `JUDGING MODE OK … "provider":"groq" … "mock":false … "voice":true`.
 4. Tab on `http://localhost:8787/demo/settings.html?layout=b`, freshly reloaded; panel badge reads `model: openai/gpt-oss-20b` (not red MOCK).
