@@ -356,7 +356,7 @@
     plan({ type: 'page_loaded', after_navigation: !!p });
   }
 
-  function stop(silent) {
+  function stop(silent, noPersist) {
     S.token += 1;
     S.paused = false;
     S.voiceToken = (S.voiceToken || 0) + 1;
@@ -366,7 +366,7 @@
     monitor.stop();
     overlay.clear();
     panel.setNotice('');
-    persist();
+    if (!noPersist) persist();
     if (!silent) {
       panel.setState('stopped');
       panel.setInstruction({ ml: 'നിർത്തി. വീണ്ടും വേണമെങ്കിൽ ലക്ഷ്യം എഴുതൂ.', en: 'Stopped. Type a goal to start again.' });

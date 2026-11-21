@@ -20,7 +20,7 @@
     if (!msg) return;
     if (msg.type === 'koode:open') K.panel.open();
     if (msg.type === 'koode:start') { K.panel.open(); K.controller.start(msg.goal, { voice: msg.voice }); reply({ ok: true }); }
-    if (msg.type === 'koode:stop') K.controller.stop();
+    if (msg.type === 'koode:stop') { K.controller.stop(msg.quiet, msg.quiet); reply({ ok: true }); }
   });
 
   (async () => {

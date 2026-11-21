@@ -55,13 +55,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'koode:startOnTab': return startOnTab(msg.goal, msg.voice);
       case 'koode:activeTab': return activeTabInfo();
       case 'koode:endSession': return endSession();
-      case 'koode:saveTask': await chrome.storage.session.set({ [key]: msg.task }); return true;
-      case 'koode:clearTask': await chrome.storage.session.remove(key); return true;
+      case 'koode:saveTask': if (staleWriter(tabId, sender)) return false;
+        await chrome.storage.session.set({ [key]: msg.task }); return true;
+      case 'koode:clearTask': if (staleWriter(tabId, sender)) return false;
+        await chrome.storage.session.remove(key); return true;
       case 'koode:loadTask': return (await chrome.storage.session.get(key))[key] || null;
       default: return { error: 'unknown message' };
     }
   })().then(sendResponse, (e) => sendResponse({ error: String(e && e.message || e) }));
   return true;
+});
+
+const navLock = new Map(); // tabId → origin being navigated to
+
+// While a requested navigation is in flight, task writes from the old page's origin are ignored.
+function staleWriter(tabId, sender) {
+  const origin = navLock.get(tabId);
+  if (!origin) return false;
+  try { return new URL(sender.url || '').origin !== origin; } catch (_) { return true; }
+}
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === 'complete' && navLock.has(tabId)) {
+    try { if (new URL(tab.url || '').origin === navLock.get(tabId)) navLock.delete(tabId); } catch (_) {}
+  }
 });
 
 async function activeTab() {
@@ -82,6 +98,9 @@ async function navigate(siteId, goal, voice) {
   if (!site) return { error: 'unsupported site' };
   const tab = await activeTab();
   if (!tab) return { error: 'no active tab' };
+  // Stop the old page first (no persist, monitor off) so its navigation handler cannot overwrite the new task.
+  await chrome.tabs.sendMessage(tab.id, { type: 'koode:stop', quiet: true }).catch(() => {});
+  navLock.set(tab.id, new URL(site.url).origin);
   if (goal) await chrome.storage.session.set({ ['task:' + tab.id]: { goal, voice: !!voice, history: [], step: 0, url: site.url, fresh: true } });
   else await chrome.storage.session.remove('task:' + tab.id);
   await chrome.tabs.update(tab.id, { url: site.url });
