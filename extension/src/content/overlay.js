@@ -5,7 +5,7 @@
   const K = (globalThis.Koode = globalThis.Koode || {});
   if (K.started) return; // already injected on this page
 
-  let host, root, ring, arrow, bubble, edge;
+  let host, root, ring, arrow, bubble, badge, label, edge, tick;
   let anchor = null, raf = 0, onLost = null, onRect = null, lostFrames = 0, frameNo = 0;
 
   const CSS = `
@@ -20,6 +20,14 @@
     @keyframes nudge { 50% { transform: translateX(-8px); } }
     .bubble { position: fixed; max-width: 260px; background: #1f2340; color: #fff; font: 600 13px/1.35 "Noto Sans Malayalam","Noto Sans",system-ui,sans-serif;
       padding: 7px 10px; border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,.25); }
+    .ring.enter { animation: enter .35s ease-out, pulse 1.4s ease-in-out .35s infinite; }
+    @keyframes enter { 0% { transform: scale(1.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    .bubble .n { display: inline-block; min-width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%;
+      background: #ff7a1a; color: #fff; font-size: 12px; margin-right: 6px; }
+    .tick { position: fixed; border: 3px solid #12b76a; border-radius: 10px; background: rgba(18,183,106,.12);
+      display: flex; align-items: center; justify-content: center; color: #12b76a; font: 800 22px system-ui, sans-serif;
+      animation: ok .7s ease-out forwards; }
+    @keyframes ok { 0% { opacity: 1; transform: scale(1); } 60% { opacity: 1; transform: scale(1.06); } 100% { opacity: 0; transform: scale(1.12); } }
     .edge { position: fixed; left: 50%; transform: translateX(-50%); background: #ff7a1a; color: #fff;
       font: 700 13px system-ui, sans-serif; padding: 6px 12px; border-radius: 999px; }
     .hidden { display: none; }
@@ -33,11 +41,13 @@
     root.innerHTML = `<style>${CSS}</style><div class="layer">
       <div class="ring hidden"></div>
       <div class="arrow hidden"><svg viewBox="0 0 64 40"><path d="M2 20 H44 M30 6 L50 20 L30 34" stroke="#ff7a1a" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      <div class="bubble hidden"></div>
+      <div class="bubble hidden"><span class="n"></span><span class="t"></span></div>
       <div class="edge hidden"></div></div>`;
     ring = root.querySelector('.ring');
     arrow = root.querySelector('.arrow');
     bubble = root.querySelector('.bubble');
+    badge = bubble.querySelector('.n');
+    label = bubble.querySelector('.t');
     edge = root.querySelector('.edge');
     document.documentElement.appendChild(host);
   }
@@ -70,7 +80,7 @@
     if (above || below) {
       [ring, arrow, bubble].forEach((n) => n.classList.add('hidden'));
       edge.classList.remove('hidden');
-      edge.textContent = above ? '▲ Scroll up — ' + (bubble.textContent || 'target') : '▼ Scroll down — ' + (bubble.textContent || 'target');
+      edge.textContent = (above ? '▲ Scroll up — ' : '▼ Scroll down — ') + (label.textContent || 'target');
       edge.style.top = above ? '12px' : '';
       edge.style.bottom = below ? '12px' : '';
       delete host.dataset.koodeTip;
@@ -92,7 +102,7 @@
     host.dataset.koodeTip = Math.round(p.tipX) + ',' + Math.round(p.tipY);
     host.dataset.koodeSide = p.side;
 
-    if (bubble.textContent) {
+    if (label.textContent) {
       bubble.classList.remove('hidden');
       const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
       let bx, by;
@@ -106,23 +116,42 @@
     }
   }
 
-  function point(targetAnchor, { text = '', lost, rect } = {}) {
+  function point(targetAnchor, { text = '', step = 0, lost, rect } = {}) {
     ensure();
+    const fresh = anchor !== targetAnchor;
     anchor = targetAnchor;
     onLost = lost || null;
     onRect = rect || null;
     lostFrames = 0;
-    bubble.textContent = text;
+    label.textContent = text;
+    if (step) badge.textContent = String(step);
+    badge.classList.toggle('hidden', !badge.textContent);
+    if (fresh) { ring.classList.remove('enter'); void ring.offsetWidth; ring.classList.add('enter'); }
     host.dataset.koodeActive = 'true';
     const r = anchor.getBoundingClientRect();
     if (r.top < 0 || r.bottom > innerHeight) anchor.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (!raf) raf = requestAnimationFrame(frame);
   }
 
-  function setText(text) { if (bubble) bubble.textContent = text || ''; }
+  function setText(text) { if (label) label.textContent = text || ''; }
+
+  // Brief green tick over the element the user just completed (independent of clear()).
+  function success() {
+    if (!anchor || !anchor.isConnected) return;
+    const r = anchor.getBoundingClientRect();
+    if (tick) tick.remove();
+    tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.textContent = '✓';
+    Object.assign(tick.style, { left: r.left - 5 + 'px', top: r.top - 5 + 'px', width: r.width + 10 + 'px', height: r.height + 10 + 'px' });
+    root.querySelector('.layer').appendChild(tick);
+    const t = tick;
+    setTimeout(() => t.remove(), 800);
+  }
 
   function clear() {
     anchor = null;
+    if (badge) badge.textContent = '';
     onLost = null;
     onRect = null;
     if (raf) cancelAnimationFrame(raf);
@@ -136,5 +165,5 @@
 
   function currentAnchor() { return anchor; }
 
-  K.overlay = { point, clear, setText, currentAnchor };
+  K.overlay = { point, clear, setText, success, currentAnchor };
 })();

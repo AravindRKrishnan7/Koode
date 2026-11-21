@@ -7,8 +7,8 @@
   let host, root, els = {}, handlers = {};
 
   const STATE_LABEL = {
-    idle: 'Ready', listening: 'Listening…', transcribing: 'Understanding…', finding: 'Finding…', waiting: 'Your turn', verifying: 'Checking…',
-    verified: 'Verified ✓', recovering: 'Let’s fix that', done: 'Done ✓', error: 'Problem', stopped: 'Stopped'
+    idle: 'Ready', listening: 'Listening…', transcribing: 'Understanding…', confirm: 'Is this right?', finding: 'Finding…', waiting: 'Your turn',
+    verifying: 'Checking…', verified: 'Verified ✓', recovering: 'Let’s fix that', done: 'Done ✓', error: 'Problem', stopped: 'Stopped'
   };
 
   const CSS = `
@@ -40,6 +40,31 @@
     button.go { border: none; border-radius: 10px; padding: 0 14px; font: 700 14px inherit; color: #fff; background: #ff6a00; cursor: pointer; }
     .row { display: flex; gap: 6px; margin-top: 8px; }
     .row button { flex: 1; border: 1px solid #e2d6c8; background: #fff; border-radius: 9px; padding: 6px; font: 600 12px inherit; cursor: pointer; color: #1f2340; }
+    .card[data-s=listening] .pill { background: #d92d20; }
+    .card[data-s=transcribing] .pill, .card[data-s=finding] .pill, .card[data-s=confirm] .pill { background: #3b5bdb; }
+    .card[data-s=waiting] .pill { background: #ff6a00; }
+    .card[data-s=verified] .pill, .card[data-s=done] .pill { background: #12b76a; }
+    .card[data-s=error] .pill, .card[data-s=recovering] .pill { background: #f79009; }
+    .card[data-s=done] header { background: linear-gradient(135deg,#067647,#12b76a); }
+    .card[data-s=finding] .instr-ml::after, .card[data-s=transcribing] .instr-ml::after { content: ' …'; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: .2; } }
+    .speak { display: none; font-size: 15px; animation: blink 0.8s ease-in-out infinite; }
+    .card.speaking .speak { display: inline; }
+    .meter { height: 6px; border-radius: 3px; background: #f1e3d3; margin-top: 8px; overflow: hidden; display: none; }
+    .card[data-s=listening] .meter { display: block; }
+    .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg,#12b76a,#f79009,#d92d20); transition: width .08s; }
+    .notice { font-size: 12px; color: #7a4b16; background: #fef0c7; border-radius: 8px; padding: 6px 9px; margin-top: 8px; }
+    .confirm { margin-top: 10px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 9px 10px; }
+    .confirm .heard { font-size: 16px; font-weight: 700; color: #1f2340; margin: 2px 0 4px; }
+    .confirm .hint { font-size: 11.5px; color: #59607f; }
+    .confirm .btns { display: flex; gap: 6px; margin-top: 8px; }
+    .confirm button { flex: 1; border-radius: 9px; padding: 8px 6px; font: 700 13px inherit; cursor: pointer; border: 1px solid #c7d2fe; background: #fff; color: #1f2340; }
+    .confirm button.yes { background: #12b76a; border-color: #12b76a; color: #fff; }
+    .celebrate { display: none; text-align: center; font-size: 40px; line-height: 1; margin-bottom: 6px; color: #12b76a; }
+    .card[data-s=done] .celebrate { display: block; animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
+    @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    button.mic.unavail { opacity: .45; }
+    button.mic:focus-visible, .confirm button:focus-visible { outline: 3px solid #ffa45c; outline-offset: 1px; }
     details { margin-top: 10px; font-size: 11px; color: #59607f; }
     details ol { max-height: 140px; overflow: auto; padding-left: 18px; margin: 6px 0 0; }
   `;
@@ -54,11 +79,20 @@
       <div class="wrap">
         <button class="launcher" title="Koode — കൂടെ">കൂ</button>
         <div class="card hidden">
-          <header><span class="name">Koode</span><span class="ml">കൂടെ</span><span class="pill">Ready</span><button class="min" title="Minimise">–</button></header>
+          <header><span class="name">Koode</span><span class="ml">കൂടെ</span><span class="speak" title="Speaking">🔊</span><span class="pill">Ready</span><button class="min" title="Minimise">–</button></header>
           <div class="body">
+            <div class="celebrate">✓</div>
             <div class="instr-ml">എന്താണ് ചെയ്യേണ്ടത്? 🎤 അമർത്തിപ്പിടിച്ച് പറയൂ, അല്ലെങ്കിൽ എഴുതൂ.</div>
             <div class="instr-en">What would you like to do? Hold 🎤 and speak, or type.</div>
             <div class="explain hidden"></div>
+            <div class="meter"><i></i></div>
+            <div class="notice hidden" role="status"></div>
+            <div class="confirm hidden">
+              <div class="hint">ഞാൻ കേട്ടത് · I heard:</div>
+              <div class="heard"></div>
+              <div class="hint">തെറ്റുണ്ടെങ്കിൽ താഴെ തിരുത്തൂ · Wrong? Edit it below, or say it again.</div>
+              <div class="btns"><button class="yes" type="button">✓ ശരി, തുടങ്ങാം</button><button class="again" type="button">🎤 വീണ്ടും പറയാം</button></div>
+            </div>
             <form><input placeholder="e.g. Help me fill this form" aria-label="Your goal" /><button class="mic" type="button" title="Hold to speak (Malayalam)" aria-label="Hold to speak">🎤</button><button class="go" type="submit">Guide</button></form>
             <div class="row"><button class="repeat" type="button">Repeat</button><button class="stop" type="button">Stop</button></div>
             <div class="meta"><span class="step">Step –</span><span class="badge">planner: –</span></div>
@@ -68,19 +102,30 @@
       </div>`;
     const q = (s) => root.querySelector(s);
     els = { wrap: q('.wrap'), launcher: q('.launcher'), card: q('.card'), pill: q('.pill'), ml: q('.instr-ml'), en: q('.instr-en'),
-      explain: q('.explain'), form: q('form'), input: q('input'), mic: q('.mic'), step: q('.step'), badge: q('.badge'), trace: q('.trace') };
+      explain: q('.explain'), form: q('form'), input: q('input'), mic: q('.mic'), step: q('.step'), badge: q('.badge'), trace: q('.trace'),
+      meter: q('.meter i'), notice: q('.notice'), confirm: q('.confirm'), heard: q('.heard'), yes: q('.yes'), again: q('.again') };
     els.launcher.addEventListener('click', () => open());
     q('.min').addEventListener('click', () => { els.card.classList.add('hidden'); els.launcher.classList.remove('hidden'); });
-    els.form.addEventListener('submit', (e) => { e.preventDefault(); const g = els.input.value.trim(); if (g && handlers.onGoal) handlers.onGoal(g); });
-    // Push-to-talk: record while the mic button is held down.
+    // While a transcript is awaiting confirmation, Enter/Guide confirms the (possibly edited) text as a voice goal.
+    els.form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+    els.yes.addEventListener('click', () => submit());
+    els.again.addEventListener('click', () => { hideConfirm(); if (handlers.onRetryVoice) handlers.onRetryVoice(); });
+    // Push-to-talk: record while the mic button (or Space/Enter on it) is held down.
     els.mic.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       els.mic.setPointerCapture(e.pointerId);
-      els.mic.classList.add('on');
-      if (handlers.onMicDown) handlers.onMicDown();
+      pressMic();
     });
     els.mic.addEventListener('pointerup', () => releaseMic());
     els.mic.addEventListener('pointercancel', () => releaseMic());
+    els.mic.addEventListener('keydown', (e) => {
+      if (e.key !== ' ' && e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) pressMic();
+    });
+    els.mic.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); releaseMic(); } });
+    els.mic.addEventListener('blur', () => releaseMic());
     q('.stop').addEventListener('click', () => handlers.onStop && handlers.onStop());
     q('.repeat').addEventListener('click', () => handlers.onRepeat && handlers.onRepeat());
     // Keep page shortcuts from firing while typing in Koode.
@@ -90,6 +135,58 @@
   }
 
   function open() { els.card.classList.remove('hidden'); els.launcher.classList.add('hidden'); host.dataset.koodeOpen = 'true'; els.input.focus(); micRect(); }
+
+  function submit() {
+    const g = els.input.value.trim();
+    if (!g) return;
+    const voiceGoal = !els.confirm.classList.contains('hidden');
+    hideConfirm();
+    if (voiceGoal) { if (handlers.onConfirm) handlers.onConfirm(g); } else if (handlers.onGoal) handlers.onGoal(g);
+  }
+
+  function pressMic() {
+    if (els.mic.classList.contains('on')) return;
+    hideConfirm();
+    els.mic.classList.add('on');
+    if (handlers.onMicDown) handlers.onMicDown();
+  }
+
+  // Show the recognised speech for confirmation; the text is also put in the input for correction.
+  function confirmTranscript(text) {
+    els.heard.textContent = text;
+    els.input.value = text;
+    els.confirm.classList.remove('hidden');
+    els.yes.focus();
+    const r = els.yes.getBoundingClientRect();
+    host.dataset.koodeConfirmRect = [r.left, r.top, r.width, r.height].map(Math.round).join(',');
+    micRect();
+  }
+
+  function hideConfirm() {
+    els.confirm.classList.add('hidden');
+    delete host.dataset.koodeConfirmRect;
+  }
+
+  function setVoiceAvailable(ok, reason = '') {
+    els.mic.classList.toggle('unavail', !ok);
+    els.mic.title = ok ? 'Hold to speak (Malayalam)' : 'Voice unavailable: ' + reason;
+    host.dataset.koodeVoiceAvailable = String(!!ok);
+  }
+
+  function setLevel(v) { els.meter.style.width = Math.round(Math.max(0, Math.min(1, v)) * 100) + '%'; }
+
+  function setSpeaking(on) {
+    els.card.classList.toggle('speaking', !!on);
+    host.dataset.koodeSpeaking = String(!!on);
+  }
+
+  function setNotice(text) {
+    els.notice.textContent = text || '';
+    els.notice.classList.toggle('hidden', !text);
+    if (text) host.dataset.koodeNotice = text; else delete host.dataset.koodeNotice;
+  }
+
+  function focusInput() { els.input.focus(); }
 
   function releaseMic() {
     if (!els.mic.classList.contains('on')) return;
@@ -109,7 +206,9 @@
 
   function setState(state) {
     host.dataset.koodeState = state;
+    els.card.dataset.s = state;
     els.pill.textContent = STATE_LABEL[state] || state;
+    if (state !== 'confirm') hideConfirm();
   }
 
   function setInstruction({ ml = '', en = '', explain = '' } = {}) {
@@ -161,5 +260,6 @@
     els.wrap.classList.toggle('top', before[1]);
   }
 
-  K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid, releaseMic, setVoiceInfo };
+  K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid, releaseMic, setVoiceInfo,
+    confirmTranscript, setVoiceAvailable, setLevel, setSpeaking, setNotice, focusInput };
 })();
