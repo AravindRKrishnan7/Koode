@@ -1,175 +1,226 @@
-# Koode — കൂടെ
+<p align="center">
+  <img src="extension/icons/icon128.png" width="88" alt="Koode logo">
+</p>
 
-**A Malayalam-first voice companion for the web.** You say what you want to do in Malayalam. Koode finds the right
-place to do it, points a live arrow at the real control, explains it in Malayalam, waits for **you** to act, checks
-that the page actually changed, and then shows the next step.
+<h1 align="center">Koode · കൂടെ</h1>
 
-*Koode guides; it never clicks, types, logs in, pays or submits for you.*
+<p align="center"><b>The web speaks your language.</b></p>
 
-Built for people in Kerala who know *what* they need online (a video to learn from, a licence detail, a form) but
-get lost in English-heavy websites.
+<p align="center">
+  A Malayalam-first AI companion that helps you navigate websites, discover services,<br>
+  and get things done with confidence.
+</p>
+
+<p align="center">
+  <img alt="Chrome extension, Manifest V3" src="https://img.shields.io/badge/Chrome-Manifest%20V3-e8650f?style=flat-square">
+  <img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20%2B-2f8a57?style=flat-square">
+  <img alt="Malayalam first" src="https://img.shields.io/badge/language-Malayalam%20first-b84a06?style=flat-square">
+  <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/runtime%20dependencies-0-7a6450?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#what-koode-does">Features</a> ·
+  <a href="#how-koode-works">How it works</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#privacy-and-safety">Privacy</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
+
+<table align="center">
+  <tr>
+    <td align="center" width="34%"><img src="docs/images/side-panel-choices.png" width="250" alt="Koode side panel offering the official website or a Malayalam tutorial"></td>
+    <td align="center" width="66%"><img src="docs/images/sarathi-live-arrow.png" width="520" alt="Koode's arrow pointing at DL Search on the live Sarathi Parivahan portal"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Ask in Malayalam; choose the official site or a tutorial</sub></td>
+    <td align="center"><sub>A live arrow on the real Sarathi Parivahan portal, step 5 of the route</sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Genuine captures from Koode's automated test runs. They used the labelled test planner, so instructions show <code>[mock]</code>; the Sarathi page is the live public site, logged out.</sub></p>
 
 ---
 
-## What Koode can do
+## Why Koode
 
-| | Capability | Example (say it in the side panel) |
-|---|---|---|
-| 🎤 | **Malayalam voice in and out.** Push-to-talk speech-to-text (Sarvam Saaras v4) and spoken Malayalam replies (Sarvam Bulbul v3). Every transcript is shown for confirmation or correction before anything happens. | *hold the mic, speak, release, press ✓* |
-| 🎯 | **Live, DOM-grounded guidance.** Koode reads the visible page structure, an LLM (Groq `openai/gpt-oss-20b`) picks one real control from that list, and the extension re-validates it against the live page. The arrow follows the element on scroll and resize. Each step advances only on evidence from the user's own action; wrong clicks are noticed and corrected. | `ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ` ("help me fill this form") |
-| ▶️ | **Goal-driven YouTube learning.** Arbitrary learning requests become safe, Malayalam-first YouTube searches. Koode opens the results directly, falls back to an English query (keeping Malayalam content) when results are thin, and points at a relevant video. | `സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ` ("solar panel installation videos") · `എനിക്ക് തെങ്ങ് കയറാൻ പഠിക്കണം` ("I want to learn coconut-tree climbing") |
-| 🏛️ | **Verified government services.** Koode recognises a service, offers the official site or a Malayalam tutorial, confirms before opening it, and then guides step by step on the real site. Starts with **Sarathi Parivahan** (driving licence services), whose address was verified against parivahan.gov.in. | `എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം` ("I want my driving licence details") → 1) official website 2) tutorial |
-| 🧭 | **Everyday sites.** Opens WhatsApp Web (it waits while you scan the QR code and never reads chats) and YouTube, guides Google Forms respondent pages you open from a link (never the form editor), and ends the session by voice. | `വാട്സ്ആപ്പ് തുറക്കൂ` ("open WhatsApp") · `നിർത്താം` ("let's stop") |
+Millions of people in Kerala know exactly what they need online: renew a licence, check an application, learn a
+skill, fill a form. They get lost in English menus, crowded portals and look-alike websites. Usually the answer is
+"ask someone to do it for you", which costs time, independence and sometimes privacy.
 
-A request for a government service that has **no verified entry** (e.g. ration card) gets a clear "official
-website not verified" answer. Koode never guesses a site and never redirects there automatically; a tutorial is
-only offered as a button.
+**Koode (കൂടെ, "with you") sits beside you instead.** You say what you want in Malayalam. Koode works out where
+to go, points at the exact button on the real page, explains it in Malayalam, waits while *you* act, and checks
+that it worked before moving on. You stay in control: Koode never clicks, types, logs in, pays or submits for you.
 
-## Privacy and safety (enforced in code)
+## What Koode does
 
-- **Personal numbers are removed before anything leaves the browser.** Aadhaar, phone, licence, PAN, vehicle and
-  card numbers, email and OTP become `[PHONE]`, `[DL_NUMBER]` and so on, and Koode says what it removed. The backend
-  redacts again.
-- **Input values are never read.** Snapshots carry only "filled / valid" flags. Password, OTP, captcha, licence and
-  application-number fields are marked sensitive: the user types them. Chats on WhatsApp are never extracted.
-- **The model never supplies a URL or coordinates.** It can pick a control ID from Koode's own list, a plain-text
-  search query (URLs, domains, operators and unsafe topics are stripped), or a verified catalogue ID. Code builds
-  every URL and re-checks every target on the live page.
-- **Official sites need confirmation and per-site permission.** Before opening one, Koode shows a card with the
-  operator, the exact host and the verification date. Chrome then asks for access to *that one host* (optional
-  host permission). If the tab leaves the official host mid-task, guidance pauses: *"ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല"*
-  ("this is not the official site").
-- **Hand-off before sensitive steps.** Koode pauses with "check your details" before submit, pay or OTP steps.
-  After "Generate OTP" it stops reading the page, so personal results are never sent to a model.
-- **API keys stay in the local backend.** The extension only talks to `localhost`, and the backend refuses API
-  calls from web pages. Self-harm requests get a helpline answer (Tele-MANAS 14416, 112) with no search and no
-  model call.
-
-## How it works
-
-```
- Chrome side panel / in-page card                       Local backend (Node 20, zero dependencies)
- ───────────────────────────────                        ──────────────────────────────────────────
- 🎤 voice ─▶ /api/stt ─────────────────────────────────▶ Sarvam Saaras v4 (speech → text)
- confirm transcript ✓
-   │
-   ├─ redact personal numbers (goals.js)
-   ├─ rule router (sites.js, catalogue.js) — no model
-   │     exit · open site · video search · verified service · guide this page
-   └─ open-ended request ─▶ /api/intent ───────────────▶ Groq LLM → strict JSON, validated
-                                                         (query or catalogue id only, never a URL)
- service worker builds the URL (YouTube results / catalogue entry), asks Chrome for per-host access
-   │
- page: snapshot of visible controls (no values) ─▶ /api/plan ─▶ Groq LLM picks ONE candidate id
-   ◀── validated id ◀──────────────────────────────── sanitised request, id checked server-side
- arrow on the live element ─▶ user acts ─▶ evidence (DOM / URL change, field valid) ─▶ next step
- spoken Malayalam replies ◀── /api/tts ◀────────────── Sarvam Bulbul v3
-```
-
-| Path | Role |
+| | |
 |---|---|
-| `extension/src/sidepanel/` | Side panel: voice dock, transcript confirmation, choice and confirmation cards, progress, Continue / Retry / Stop |
-| `extension/src/content/` | Extractor (visible controls, privacy filter, popup detection), overlay (arrow), monitor (verification), controller (state machine), in-page card |
-| `extension/src/shared/` | `goals.js` (redaction, query safety, intent schema), `sites.js` (routing), `catalogue.js` (verified services) |
-| `extension/src/background/service-worker.js` | Backend proxy, navigation broker, per-host permissions, origin guard |
-| `backend/src/` | `/api/plan`, `/api/intent`, `/api/stt`, `/api/tts`; sanitiser and validators; Groq / Sarvam adapters; labelled mocks |
-| `demo-site/` | Safe practice pages (application form, settings layouts) served at `/demo/` |
+| **Malayalam voice, both ways** | Hold the mic and speak naturally; Koode shows what it heard for you to confirm or correct, then replies aloud in Malayalam. Typing works too. |
+| **Understands goals, not commands** | Plain requests such as *"I want to learn coconut-tree climbing"* become a plan: open a site, search for videos, offer a verified service, or guide you on the current page. |
+| **Learning on YouTube** | Opens Malayalam-first YouTube results directly, tries an English query that keeps Malayalam content when results are thin, and points you to a relevant video. |
+| **Verified government services** | Recognises the service you mean, offers the official website or a Malayalam tutorial, confirms the exact address before opening it, and guides you step by step. It starts with **Sarathi Parivahan** (driving licence services). |
+| **Live, grounded arrows** | Koode reads the controls that are actually visible, picks one real element (never screen coordinates), keeps the arrow attached as the page scrolls and changes, and points at a popup's close button first. |
+| **Every step verified** | A step completes only when the page really changes after *your* action. A wrong click is noticed and gently corrected. |
+| **Privacy first** | Typed values are never read; personal numbers are removed from your request before it reaches the AI planner; sensitive steps stay yours. |
 
-Details: [`docs/CONTRACTS.md`](docs/CONTRACTS.md) · [`docs/COMPANION.md`](docs/COMPANION.md) · [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs/DEMO.md`](docs/DEMO.md)
+## Talk to Koode
 
-## Real AI vs. mock testing
+| You say | Meaning | Koode |
+|---|---|---|
+| `സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ` | "Solar panel installation videos" | Opens Malayalam YouTube results and points at a relevant video. |
+| `എനിക്ക് തെങ്ങ് കയറാൻ പഠിക്കണം` | "I want to learn to climb a coconut tree" | Understands the learning goal and searches for it. |
+| `എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം` | "I want my driving licence details" | Offers **1** the official website or **2** a Malayalam tutorial. |
+| `ഒന്ന്` | "One" | Shows the verified site (operator, exact address, verification date) and opens it only after you confirm. Then it guides you: state **Kerala** → **Others** → **DL Search**. |
+| `ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ` | "Help me fill this form" | Guides you field by field; you type, Koode checks each step. |
+| `വാട്സ്ആപ്പ് തുറക്കൂ` | "Open WhatsApp" | Opens WhatsApp Web, waits while you scan the QR code, and never reads your chats. |
+| `നിർത്താം` | "Let's stop" | Ends the session and says goodbye. |
 
-| Mode | Command | Planner / intent | Voice | Uses API credits | Shown in the panel |
-|---|---|---|---|---|---|
-| **Judging (real)** | `scripts/start-judging.sh` | Groq `openai/gpt-oss-20b` | Sarvam (real) | Yes | `model: openai/gpt-oss-20b` |
-| Rehearsal | `scripts/start-rehearsal.sh` | **Mock** (scripted, not AI) | Sarvam if its key is stored | Sarvam only | red **MOCK planner (not AI)** |
-| Tests | `KOODE_PROVIDER=mock KOODE_SPEECH=mock` | **Mock** | **Mock** (queued transcripts, chime replies) | None | **MOCK planner · MOCK speech** |
+<p align="center">
+  <img src="docs/images/side-panel-confirm.png" width="250" alt="Official-site confirmation card">
+  &nbsp;&nbsp;
+  <img src="docs/images/side-panel-guidance.png" width="250" alt="Step-by-step guidance with Continue, Retry and Stop">
+</p>
+<p align="center"><sub>Left: Koode confirms the official address before opening it. Right: progress, with Continue, Retry and Stop.</sub></p>
 
-Mocks are always labelled in the UI and in `/health`. Judging mode refuses to start without both keys and refuses
-mock speech. The E2E runners refuse to run against real Groq or Sarvam unless explicitly allowed.
+## How Koode works
 
-## Install and run (macOS, about 5 minutes)
+1. **Listen.** Your voice is transcribed (Sarvam Saaras), shown back to you, and acted on only after you confirm.
+2. **Protect.** Phone, Aadhaar, licence and other personal numbers in the request are replaced with placeholders in
+   your browser, before any planner, URL or saved task sees them.
+3. **Understand.** Fast local rules handle the common cases. Open-ended requests go to an intent model that may
+   only suggest a plain search query or a *verified* service ID, never a web address.
+4. **Go there safely.** Koode itself builds the URL: a YouTube search, or an official address from its verified
+   catalogue. Official sites need your confirmation, and Chrome asks for access to that one site only.
+5. **Guide.** On the page, Koode snapshots the visible controls (labels and states, no values). The planner picks
+   one, Koode re-checks it against the live page and points at it, waits for you, and verifies the result.
 
-**Requirements:** Node.js 20+, Google Chrome 116+, a Groq API key and a Sarvam API key for real mode.
-**The Chrome extension needs the local backend running:** without it the panel shows *"Koode backend is not running"*.
+```mermaid
+flowchart LR
+  U([You, in Malayalam]) --> SP["Side panel<br/>voice · cards · progress"]
+  SP --> R{"Local rules +<br/>verified catalogue"}
+  R -- "open-ended" --> BE
+  SP -- "audio" --> BE[("Local backend<br/>Node 20")]
+  BE <--> SV["Sarvam<br/>Saaras STT · Bulbul TTS"]
+  BE <--> LLM["LLM via Groq<br/>gpt-oss-20b"]
+  R --> SW["Service worker<br/>builds every URL · per-site access"]
+  SW --> PG["Web page<br/>visible controls, no values"]
+  PG -- "snapshot" --> BE
+  BE -- "one validated control id" --> PG
+  PG --> A["Live arrow · you act · step verified"]
+```
+
+### Technology
+
+| Layer | Built with |
+|---|---|
+| Browser | Chrome extension (Manifest V3): side panel, content scripts (in-page UI in a closed shadow DOM), service worker; plain JavaScript, no build step |
+| Backend | Node.js 20 with **zero runtime dependencies**: request sanitiser, validators, `/api/plan`, `/api/intent`, `/api/stt`, `/api/tts` |
+| Language AI | Groq (`openai/gpt-oss-20b`) for intent and step planning; adapters for OpenAI, Anthropic and Gemini |
+| Speech | Sarvam **Saaras v4** (speech-to-text) and **Bulbul v3** (Malayalam text-to-speech) |
+| Testing | `node:test` unit suites; real-Chrome end-to-end runs (Playwright core) with trusted mouse and keyboard input |
+
+## Getting started
+
+> **Koode runs with a local backend.** The Chrome extension talks only to `localhost:8787`, which holds your API
+> keys and calls the AI services. There is no hosted Koode service yet, so start the backend before using the
+> extension.
+
+**You need** Node.js 20+, Google Chrome 116+, and for real AI a [Groq](https://console.groq.com) API key and a
+[Sarvam AI](https://www.sarvam.ai) API key.
 
 ```bash
-git clone https://github.com/AravindRKrishnan7/Koode.git ~/Koode
-cd ~/Koode            # main = final submission
+git clone https://github.com/AravindRKrishnan7/Koode.git
+cd Koode
 
-# Store keys in the macOS Keychain. You paste each key at a hidden prompt; it is never written to a file,
-# shell history or the repo.
+# macOS: store keys in the Keychain. Each key is pasted at a hidden prompt and never written to a file,
+# shell history or the repository.
 security add-generic-password -a "$USER" -s koode-groq   -w
 security add-generic-password -a "$USER" -s koode-sarvam -w
 
-scripts/start-judging.sh     # real Groq + Sarvam on http://localhost:8787 (wait for "JUDGING MODE OK")
+scripts/start-judging.sh        # real Groq + Sarvam on http://localhost:8787
 ```
 
-Then in Chrome:
+Then load the extension:
 
-1. Open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `~/Koode/extension`
-   (version 0.5.2). Pin **Koode — കൂടെ**.
-2. Click the Koode toolbar icon to open the side panel (it works on any tab, including New Tab). On the first mic
-   press, allow the microphone (if Chrome can't ask inside the side panel, use the **Allow microphone** button).
+1. Open `chrome://extensions` and turn on **Developer mode**.
+2. Choose **Load unpacked** and select the `extension/` folder. Pin **Koode — കൂടെ**.
+3. Click the Koode icon on any tab (even New Tab) to open the side panel, hold the mic and speak.
 
-<details><summary>Other systems / manual start</summary>
+<details>
+<summary><b>Other systems, or trying Koode without API keys</b></summary>
 
-The scripts read keys from the Keychain, an already-exported environment variable, or a hidden prompt. Manual start
-without putting keys on the command line:
+Start the backend by hand without putting keys on the command line:
 
 ```bash
-cd ~/Koode/backend
-read -rs GROQ_API_KEY && export GROQ_API_KEY       # paste, Enter (hidden)
+cd backend
+read -rs GROQ_API_KEY && export GROQ_API_KEY        # paste, then Enter (hidden)
 read -rs SARVAM_API_KEY && export SARVAM_API_KEY
-KOODE_PROVIDER=groq KOODE_REQUIRE_LLM=1 npm start   # listens on 127.0.0.1:8787 only
+KOODE_PROVIDER=groq KOODE_REQUIRE_LLM=1 npm start    # listens on 127.0.0.1 only
 ```
+
+With no keys, `npm start` runs a **clearly labelled mock planner** (scripted, not AI) so you can explore the
+interface; the panel shows a red *MOCK* badge. `scripts/start-rehearsal.sh` runs the mock planner with real Sarvam
+voice. Practice pages are served at `http://localhost:8787/demo/`.
 </details>
 
-## Demo for judges (about 3 minutes)
+## Privacy and safety
 
-All of these happen in the side panel. Hold the mic, speak, release, and press **✓** to confirm what Koode heard.
+- **Your input stays yours.** Koode never reads what you type into fields; snapshots carry only "filled" and "valid"
+  flags. Passwords, OTPs, captchas and licence or application numbers are marked sensitive, and you type them yourself.
+- **Personal numbers are stripped early.** Aadhaar, phone, licence, PAN, vehicle and card numbers, emails and OTPs in
+  your request are replaced in the browser before any AI planner, URL or saved task sees them, and the backend checks
+  again. (Voice audio itself goes to Sarvam for transcription; typing avoids that.)
+- **The AI never chooses where you go.** Models can pick a control from Koode's own list, a sanitised search query,
+  or a verified catalogue ID. Code builds every URL and re-validates every target on the live page.
+- **Official means verified.** Government destinations come from a small catalogue. Each entry is checked against
+  the live site (valid TLS, operator, a link from the parent official portal) and records its evidence and a
+  re-check date. Services without a verified entry are explained, never guessed. If a task drifts to another
+  domain, Koode pauses: *"ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല"* ("this is not the official site").
+- **Sensitive steps are yours.** Koode pauses with *"check your details"* before submit, payment or OTP steps,
+  and stops reading the page after the OTP request.
+- **Keys stay local.** API keys live only in the backend process, which listens on `127.0.0.1` and refuses calls from web pages.
+  Requests about self-harm get a helpline answer (Tele-MANAS 14416, emergency 112), never a search.
 
-1. **Learning:** `സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ`. YouTube results open directly in Malayalam, an arrow
-   points at a relevant video, you open it, and Koode confirms.
-2. **Government service:** `എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം`. Two cards appear; say `ഒന്ന്` (one).
-   The official-site card shows the operator, host and verification date. Press **✓** and allow Chrome access to
-   `sarathi.parivahan.gov.in` (one time). Then follow the arrows: close the popup → state **Kerala** → **Skip** →
-   **Others** → **DL Search**. You type the mobile number and captcha; Koode pauses with "check your details" and
-   hands off at **Generate OTP**.
-3. **Unverified service:** `റേഷൻ കാർഡ് അപേക്ഷിക്കണം` ("apply for a ration card"). Koode says no official site is
-   verified and opens nothing.
-4. **Form guidance:** `അപേക്ഷാ ഫോം തുറക്കൂ` ("open the application form"), then `ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ`
-   ("help me fill this form"). Koode guides field by field; click a wrong field to see the correction.
-5. **End:** `നിർത്താം` ("let's stop").
+## Limitations
 
-Typing a request instead of speaking works everywhere (text-only replies). Groq free tier is 8,000 tokens per minute
-and a step uses about 1–3k tokens, so a short "AI busy, retrying in N s" countdown is normal.
+- **Local backend required:** Koode is not yet packaged for the Chrome Web Store, and there is no hosted backend.
+- **One verified government service:** Sarathi Parivahan, with the Kerala route. Other services are explained but
+  not opened.
+- **Chrome only.** The first visit to an official site needs a click to grant Chrome access (a voice "yes" can't
+  open Chrome's permission prompt).
+- **Rate limits and real sites:** free-tier AI limits can cause short "retrying" pauses, and live sites change
+  their layouts. Koode re-reads the page every step, but some flows may need a retry.
+- Logged-in WhatsApp Web has been tested only on a stand-in page.
 
-## Tests
+## Roadmap
 
-```bash
-cd tests && npm install
-npm run unit                                                   # 71 unit tests: routing, redaction, query safety,
-                                                               # intent validation, catalogue, sanitiser
-npx @puppeteer/browsers install chrome@stable --path ~/.cache/koode-cft   # Chrome for Testing (loads unpacked extensions)
-(cd ../backend && PORT=8797 KOODE_PROVIDER=mock KOODE_SPEECH=mock npm start) &
-KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs                  # full journey + goals + grant (43 checks)
-KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs --only services  # Sarathi flow on a stand-in (21 checks)
-KOODE_BACKEND=http://localhost:8797 node e2e/run.mjs --repeat 2           # form / settings / voice regression
-```
+- More verified services, each added only with documented evidence: vehicle services (Vahan), Kerala e-District,
+  and other high-demand portals.
+- Choosing your state on national portals instead of assuming Kerala.
+- A packaged extension and an optional hosted backend for easier installation.
+- Broader understanding of Malayalam dialects and Manglish (Malayalam typed in Latin letters).
+- A finer action policy that recognises login, payment and final-submit steps on any site.
 
-E2E drives real Chrome with real (trusted) mouse and keyboard input. WhatsApp, YouTube and Sarathi are served as
-local stand-ins at their real hostnames. `--only real` and `--only real-services` open the live sites while logged
-out, with the mock planner and no typing on government pages.
+## Contributing
 
-## Verification status
+Ideas, bug reports and Malayalam phrasing examples are very welcome. Please open an issue first. **Koode does not
+have an open-source license yet**, so please discuss before sending substantial code.
 
-| What | How it was verified |
+When contributing:
+
+- run `cd tests && npm install && npm run unit`, plus the mock end-to-end suites in [docs/HACKATHON.md](docs/HACKATHON.md#tests);
+  they never use paid APIs;
+- add verified services in `extension/src/shared/catalogue.js` with their verification evidence, never a URL from
+  memory;
+- keep the safety rules intact: no reading input values, no model-chosen URLs, the user performs every action.
+
+## Documentation
+
+| | |
 |---|---|
-| Core loop: voice → confirm → arrow → verified click → next step | **Real Groq + real Sarvam** in Chrome (tags `koode-groq-verified`: 51/51 steps, voice 3/3; `koode-judging-final`) |
-| YouTube goals, Sarathi services, privacy, permissions, new UI | Mock planner and mock speech in real Chrome (unit 71/71, journey 43/43, services 21/21, regression ×2). Live **logged-out** youtube.com and sarathi.parivahan.gov.in with the mock planner, as far as the mobile-number field. |
-| Real Groq/Sarvam on the goal-driven and Sarathi flows | Pending the final live run before submission |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The guidance loop and module layout |
+| [docs/CONTRACTS.md](docs/CONTRACTS.md) | API contracts: `/api/plan`, `/api/intent`, speech, catalogue and permissions |
+| [docs/COMPANION.md](docs/COMPANION.md) | Side panel, routing, verified services, privacy rules |
+| [docs/DEMO.md](docs/DEMO.md) | Demo-laptop setup and the real-microphone test |
+| [docs/HACKATHON.md](docs/HACKATHON.md) | Run modes, demo script, test suites and verification status |
 
-**Known limits:** one verified government service so far (Sarathi; Kerala route); the first Chrome site-access
-prompt needs a button click; logged-in WhatsApp is tested only on a stand-in; YouTube's ranking and Groq free-tier
-rate limits vary.
+<p align="center"><sub>Built with care for Malayalam speakers · കൂടെ — always with you.</sub></p>
