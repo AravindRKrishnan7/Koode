@@ -25,8 +25,13 @@
     return null;
   }
 
+  // Pages the content script runs on (manifest host permissions); not all are navigation targets.
   function forUrl(url) {
-    try { const u = new URL(url); return SITES.find((s) => s.host === u.hostname && (s.host !== 'localhost' || u.pathname.startsWith('/demo/'))) || null; } catch (_) { return null; }
+    let u;
+    try { u = new URL(url); } catch (_) { return null; }
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return { id: 'demo', name: 'Koode demo page' };
+    if (u.hostname === 'docs.google.com' && u.pathname.startsWith('/forms/')) return { id: 'googleforms', name: 'Google Forms' };
+    return SITES.find((s) => s.host === u.hostname && s.host !== 'localhost') || null;
   }
 
   const api = { SITES, PRIVATE, match, forUrl };
