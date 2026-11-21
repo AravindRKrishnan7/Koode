@@ -32,7 +32,11 @@ test('speak returns base64 WAV; errors and missing key are reported without the 
   assert.equal(body.language_code, 'ml-IN');
 
   stubFetch({ status: 403, body: { error: { message: 'invalid key' } } }, []);
-  await assert.rejects(speak(cfg, { text: 'x' }), (e) => /Sarvam HTTP 403/.test(e.message) && !e.message.includes('test-key'));
-  await assert.rejects(transcribe({ ...cfg, keys: {} }, { audio: 'YQ==' }), /SARVAM_API_KEY not set/);
-  await assert.rejects(transcribe(cfg, { audio: '' }), /empty audio/);
+  await assert.rejects(speak(cfg, { text: 'x' }), (e) => /Sarvam HTTP 403/.test(e.message) && e.code === 'auth' && !e.message.includes('test-key'));
+  stubFetch({ status: 429, body: {} }, []);
+  await assert.rejects(transcribe(cfg, { audio: 'YQ==' }), (e) => e.code === 'rate_limited');
+  await assert.rejects(transcribe({ ...cfg, keys: {} }, { audio: 'YQ==' }), (e) => /SARVAM_API_KEY not set/.test(e.message) && e.code === 'not_configured');
+  await assert.rejects(transcribe(cfg, { audio: '' }), (e) => /empty audio/.test(e.message) && e.code === 'bad_audio');
+  globalThis.fetch = (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+  await assert.rejects(transcribe({ ...cfg, speechTimeoutMs: 20 }, { audio: 'YQ==' }), (e) => e.code === 'timeout');
 });

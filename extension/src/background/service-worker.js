@@ -12,12 +12,26 @@ async function backendUrl() {
 }
 
 async function api(route, payload) {
-  const res = await fetch((await backendUrl()) + route, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  });
+  let res;
+  try {
+    res = await fetch((await backendUrl()) + route, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+  } catch (_) {
+    return { error: 'Koode backend not reachable', code: 'offline' };
+  }
   const body = await res.json().catch(() => ({ error: 'bad JSON from backend' }));
-  if (!res.ok) return { error: body.error || 'backend HTTP ' + res.status };
+  if (!res.ok) return { error: body.error || 'backend HTTP ' + res.status, code: body.code, retry_after_ms: body.retry_after_ms };
   return body;
+}
+
+async function health() {
+  try {
+    const res = await fetch((await backendUrl()) + '/health');
+    return await res.json();
+  } catch (_) {
+    return { ok: false };
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -28,6 +42,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'koode:plan': return api('/api/plan', msg.payload);
       case 'koode:stt': return api('/api/stt', msg.payload);
       case 'koode:tts': return api('/api/tts', msg.payload);
+      case 'koode:health': return health();
       case 'koode:saveTask': await chrome.storage.session.set({ [key]: msg.task }); return true;
       case 'koode:clearTask': await chrome.storage.session.remove(key); return true;
       case 'koode:loadTask': return (await chrome.storage.session.get(key))[key] || null;

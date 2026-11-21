@@ -95,8 +95,8 @@ const server = http.createServer(async (req, res) => {
         : `[tts] ${out.model} ${out.latency_ms}ms text_chars=${String(body.text || '').length}`);
       return send(res, 200, out);
     } catch (e) {
-      console.error(stt ? '[stt] error' : '[tts] error', e.message);
-      return send(res, 502, { error: e.message });
+      console.error(stt ? '[stt] error' : '[tts] error', e.code || '', e.message);
+      return send(res, e.code === 'not_configured' ? 503 : 502, { error: e.message, code: e.code || 'upstream' });
     }
   }
   send(res, 404, 'not found');
