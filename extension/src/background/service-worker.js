@@ -186,12 +186,14 @@ const CONTENT_JS = chrome.runtime.getManifest().content_scripts[0].js;
 async function serviceStatus(serviceId) {
   const e = self.KoodeCatalogue.byId(serviceId);
   if (!e) return { error: 'unknown service' };
+  if (e.guide === false) return { granted: true, hosts: e.hosts, linkOnly: true }; // opened, not guided: no site access needed
   return { granted: await chrome.permissions.contains({ origins: self.KoodeCatalogue.origins(e) }), hosts: e.hosts };
 }
 async function syncServiceScripts() {
   const Cat = self.KoodeCatalogue;
   const have = new Set((await chrome.scripting.getRegisteredContentScripts().catch(() => [])).map((r) => r.id));
   for (const e of Cat.CATALOGUE) {
+    if (e.guide === false) continue;
     const id = 'koode-svc-' + e.id;
     const granted = await chrome.permissions.contains({ origins: Cat.origins(e) }).catch(() => false);
     if (granted && !have.has(id)) {
@@ -215,6 +217,21 @@ async function openService(msg, tabId, fromPage) {
   if (!tabId) return { error: 'no tab' };
   const sub = Cat.serviceOf(e, msg.subId);
   const goal = self.KoodeGoals.redact(String(msg.goal || '')).text.slice(0, 300) || (sub ? sub.en : e.name);
+  // Link-only entry: open the verified page (catalogue URL only) and hand off. No task, no guidance, no site access.
+  if (e.guide === false) {
+    const url = Cat.urlFor(e, sub);
+    if (!url) return { error: 'no verified address' };
+    const unsaved = await chrome.tabs.sendMessage(tabId, { type: 'koode:hasUnsavedInput' }).then((r) => !!(r && r.unsaved), () => false);
+    if (unsaved) {
+      const from = await chrome.tabs.get(tabId).catch(() => null);
+      const tab = await chrome.tabs.create({ url, active: true, ...(from ? { windowId: from.windowId, index: from.index + 1, openerTabId: from.id } : {}) });
+      return { ok: true, handoff: true, tabId: tab.id, newTab: true, url };
+    }
+    if (!fromPage) await chrome.tabs.sendMessage(tabId, { type: 'koode:stop', quiet: true }).catch(() => {});
+    await chrome.storage.session.remove(['task:' + tabId, 'progress:' + tabId]);
+    await chrome.tabs.update(tabId, { url, active: true });
+    return { ok: true, handoff: true, tabId, newTab: false, url };
+  }
   if (!(await chrome.permissions.contains({ origins: Cat.origins(e) }))) {
     if (!fromPage) return { error: 'permission_needed', code: 'permission_needed' };
     const grantTab = await chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/grant.html'), active: true });

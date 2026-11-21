@@ -57,7 +57,7 @@ that it worked before moving on. You stay in control: Koode never clicks, types,
 | **Malayalam voice, both ways** | Hold the mic and speak naturally; Koode shows what it heard for you to confirm or correct, then replies aloud in Malayalam. Typing works too. |
 | **Understands goals, not commands** | Plain requests such as *"I want to learn coconut-tree climbing"* become a plan: open a site, search for videos, offer a verified service, or guide you on the current page. |
 | **Learning on YouTube** | Opens Malayalam-first YouTube results directly, tries an English query that keeps Malayalam content when results are thin, and points you to a relevant video. |
-| **Verified government services** | Recognises the service you mean, offers the official website or a Malayalam tutorial, confirms the exact address before opening it, and guides you step by step. It starts with **Sarathi Parivahan** (driving licence services). |
+| **Verified government services** | Recognises the service you mean, offers the official website or a Malayalam tutorial, confirms the exact address before opening it, and guides you step by step. It guides you through **Sarathi Parivahan** (driving licence services) and opens verified Parivahan **vehicle** pages (vehicle details, Vahan services) with a clear hand-off. |
 | **Live, grounded arrows** | Koode reads the controls that are actually visible, picks one real element (never screen coordinates), keeps the arrow attached as the page scrolls and changes, and points at a popup's close button first. |
 | **Every step verified** | A step completes only when the page really changes after *your* action. A wrong click is noticed and gently corrected. |
 | **Privacy first** | Typed values are never read; personal numbers are removed from your request before it reaches the AI planner; sensitive steps stay yours. |
@@ -183,8 +183,8 @@ voice. Practice pages are served at `http://localhost:8787/demo/`.
 ## Limitations
 
 - **Local backend required:** Koode is not yet packaged for the Chrome Web Store, and there is no hosted backend.
-- **One verified government service:** Sarathi Parivahan, with the Kerala route. Other services are explained but
-  not opened.
+- **Few verified services so far:** step-by-step guidance on Sarathi Parivahan (Kerala route); Parivahan vehicle pages
+  are opened after confirmation and handed over, without guidance. Other services are explained but not opened.
 - **Chrome only.** The first visit to an official site needs a click to grant Chrome access (a voice "yes" can't
   open Chrome's permission prompt).
 - **Rate limits and real sites:** free-tier AI limits can cause short "retrying" pauses, and live sites change

@@ -212,6 +212,8 @@
     optVideo: { ml: 'മലയാളം ട്യൂട്ടോറിയൽ കാണാം', en: 'Watch a Malayalam tutorial' },
     cancelled: { ml: 'ശരി, തുറക്കുന്നില്ല.', en: "Okay, I won't open it." },
     needGrant: { ml: 'Chrome അനുവാദം ചോദിക്കാൻ താഴെയുള്ള "✓ തുറക്കാം" ബട്ടൺ അമർത്തൂ.', en: 'Press the "✓ Open" button below so Chrome can ask for access to this site (one time).' },
+    handoff: { ml: 'ഔദ്യോഗിക സൈറ്റ് തുറന്നു. ഈ സൈറ്റിൽ Koode ഇപ്പോൾ ഘട്ടം ഘട്ടമായി നയിക്കില്ല; സൈറ്റിലെ നിർദ്ദേശങ്ങൾ പിന്തുടരൂ. വാഹന നമ്പർ, മൊബൈൽ നമ്പർ, OTP എന്നിവ നിങ്ങൾ തന്നെ നൽകൂ.',
+      en: "The official site is open. Koode doesn't guide step by step on this site yet, so follow the site's own steps. You type the vehicle number, mobile number and OTP yourself." },
     offSite: { ml: 'ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല. Koode ഇവിടെ നിർദ്ദേശങ്ങൾ നിർത്തി. തിരികെ പോകാൻ ബ്രൗസറിലെ "Back" അമർത്തൂ.',
       en: 'This is not the official site, so Koode has paused guidance. Use the browser Back button to return.' },
     offer: { ml: 'ഇതിനെക്കുറിച്ചുള്ള വീഡിയോകൾ കാണാം', en: 'Show videos about it' },
@@ -235,6 +237,12 @@
       return { kind: 'say', ...m, reason: (resp && (resp.code || resp.error)) || 'no_response' };
     }
     if (resp.reason === 'self_harm') return { kind: 'say', ...MSG.selfHarm, reason: 'self_harm' };
+    // A model "unsupported" with no safety reason, for a request that clearly names a verified service
+    // (live: "information about my car through a government website"), offers that service instead.
+    if (resp.type === 'unsupported' && !resp.reason && ctx.goal && globalThis.KoodeCatalogue) {
+      const m = globalThis.KoodeCatalogue.match(ctx.goal);
+      if (m) return { kind: 'service', entry: m.entry, service: m.service, want: globalThis.KoodeCatalogue.wants(ctx.goal) };
+    }
     switch (resp.type) {
       case 'youtube_search': {
         const search = planSearch(resp);

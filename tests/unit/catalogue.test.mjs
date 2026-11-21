@@ -35,8 +35,11 @@ test('catalogue integrity: https entry on a listed host, verification record, Ma
     assert.ok(e.services.length);
     for (const s of e.services) {
       assert.match(s.ml, /[ഀ-ൿ]/);
-      assert.ok(/"[^"]+"/.test(s.hint), 'hint names on-screen labels');
-      assert.ok(!/https?:|www\./.test(s.hint), 'hints never contain URLs');
+      if (e.guide !== false) {
+        assert.ok(/"[^"]+"/.test(s.hint), 'hint names on-screen labels');
+        assert.ok(!/https?:|www\./.test(s.hint), 'hints never contain URLs');
+      }
+      assert.ok(Cat.urlFor(e, s), s.id + ': its URL is https on the entry hosts');
       assert.ok(G.cleanQuery(s.video.ml).ok && G.cleanQuery(s.video.en).ok);
     }
   }
@@ -45,7 +48,8 @@ test('catalogue integrity: https entry on a listed host, verification record, Ma
 test('manifest: catalogue hosts are optional (asked per host), never granted at install or as content-script matches', () => {
   const optional = manifest.optional_host_permissions || [];
   const matches = manifest.content_scripts.flatMap((c) => c.matches);
-  for (const e of Cat.CATALOGUE) for (const o of Cat.origins(e)) {
+  // Link-only entries (guide: false) are opened, not guided: they need no site access at all.
+  for (const e of Cat.CATALOGUE.filter((x) => x.guide !== false)) for (const o of Cat.origins(e)) {
     assert.ok(optional.includes(o), o + ' is optional');
     assert.ok(!manifest.host_permissions.includes(o), o + ' not granted at install');
     assert.ok(!matches.includes(o), o + ' not a static content-script match (that would grant it at install)');

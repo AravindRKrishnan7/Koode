@@ -576,6 +576,7 @@
       panel.setState('idle');
       return talkHere('Chrome അനുവാദത്തിനായി ഒരു Koode ടാബ് തുറന്നു. അവിടെ "അനുവദിച്ച് തുറക്കാം" അമർത്തൂ.', 'A Koode tab opened to ask Chrome for access to this site (one time). Press "Allow & open" there.', opts);
     }
+    if (r.handoff) { host().dataset.koodeHandoff = new URL(r.url).host; panel.setState('idle'); return talkHere(G.MSG.handoff.ml, G.MSG.handoff.en, opts); }
     if (r.newTab) { panel.setState('idle'); talkHere('നിങ്ങൾ ടൈപ്പ് ചെയ്തത് നഷ്ടപ്പെടാതിരിക്കാൻ സൈറ്റ് പുതിയ ടാബിൽ തുറന്നു.', 'The site opened in a new tab so what you typed here is kept.', opts); }
   }
 

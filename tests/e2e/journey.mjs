@@ -191,6 +191,9 @@ async function main() {
     return route.fulfill({ status: 200, contentType: type, body: fs.readFileSync(file) });
   });
   // A stand-in for "some other website" (origin guard) — never a real external request.
+  // Link-only vehicle destinations: stand-ins so mock tests never reach the real Parivahan sites.
+  const parivahanHits = [];
+  await ctx.route(/^https:\/\/(services|vahan)\.parivahan\.gov\.in\//, (route) => { parivahanHits.push(route.request().url()); return route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Parivahan stand-in</title><h1>Parivahan stand-in (fixture)</h1><input placeholder="Enter 10-digit mobile number">' }); });
   await ctx.route(/^https:\/\/not-official\.example\//, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Elsewhere</title><h1>Some other website (fixture)</h1>' }));
   if (only !== 'real-services') await ctx.route(/^https:\/\/sarathi\.parivahan\.gov\.in\//, (route) => {
     const u = new URL(route.request().url());
@@ -545,12 +548,35 @@ async function main() {
     const pa = readLog().length;
     ia = readIntentLog().length;
     await speak(sp, 'എനിക്ക് എന്റെ വണ്ടിയുടെ ലൈസൻസ് നമ്പർ കുറിച്ച് അറിയണമായിരുന്നു. അപ്പോൾ അതിന് ഗവൺമെന്റ് വെബ്സൈറ്റ്സ് ഏതേലും ഉണ്ടോ? ഉണ്ടെങ്കിൽ എനിക്ക് അങ്ങോട്ട് പോകണം.');
-    q = await waitPanel(sp, (x) => x.koodeIntentResult, 'live transcript intent', 15000);
+    q = await waitPanel(sp, (x) => x.koodeConfirmService === 'vehicle', 'live transcript → vehicle confirmation', 15000);
     await sleep(800);
-    check('S5b on YouTube: the live transcript → intent (service, no verified site), not Sarathi, no YouTube page-planner call, no navigation',
-      q.koodeIntent === 'intent' && q.koodeIntentResult === 'service' && /പരിശോധിച്ച്/.test(q.koodeMl || '') && !q.koodeConfirmService && !q.koodeOptions &&
-      !logEntries(pa).some((e) => e.request && /വണ്ടിയുടെ ലൈസൻസ്/.test(e.request.goal)) && page.url() === ytUrl && intentEntries(ia).length === 1,
+    check('S5b on YouTube: the live transcript → verified VEHICLE confirmation (not Sarathi), no YouTube page-planner call, no navigation yet',
+      q.koodeIntent === 'service' && q.koodeConfirmService === 'vehicle' && !q.koodeOptions &&
+      !logEntries(pa).some((e) => e.request && /വണ്ടിയുടെ ലൈസൻസ്/.test(e.request.goal)) && page.url() === ytUrl && intentEntries(ia).length === 0,
       { route: q.koodeIntent, result: q.koodeIntentResult, plannerGotTranscript: logEntries(pa).some((e) => e.request && /വണ്ടിയുടെ ലൈസൻസ്/.test(e.request.goal)), ml: (q.koodeMl || '').slice(0, 50) });
+
+    await sp.locator('#svc-no').click();
+
+    // S10) Live 0.5.2 car request: verified vehicle page, confirmation with the exact URL, open, explicit hand-off.
+    await page.goto('chrome://newtab/').catch(() => {});
+    await sleep(400);
+    const ph0 = parivahanHits.length;
+    await speak(sp, 'എനിക്ക് എന്റെ കാറിനെപ്പറ്റിയുള്ള വിവരങ്ങൾ അറിയാൻ വേണ്ടി ഗവൺമെന്റ് വെബ്സൈറ്റ് കാണാം.');
+    q = await waitPanel(sp, (x) => x.koodeConfirmService === 'vehicle', 'car → vehicle confirmation', 15000);
+    const card = await sp.locator('#notice').innerText();
+    check('S10 "information about my car through a government website" → confirmation card with the verified NTR address; nothing opened yet',
+      q.koodeService === 'vehicle/vehicle_details' && /services\.parivahan\.gov\.in\/ntr/.test(card) && /does not guide|നയിക്കില്ല/.test(card) && /^chrome:\/\/new|about:blank/.test(page.url()) && parivahanHits.length === ph0,
+      { service: q.koodeService, url: page.url() });
+    await sp.locator('#svc-yes').click();
+    await page.waitForURL(/services\.parivahan\.gov\.in\/ntr\//, { timeout: 10000 });
+    q = await waitPanel(sp, (x) => x.koodeHandoff, 'hand-off', 8000);
+    await sleep(1200);
+    const ss10 = await session(tabId);
+    const koodeThere = await page.$('#koode-panel-root');
+    const perm10 = await sw.evaluate(() => chrome.permissions.contains({ origins: ['https://services.parivahan.gov.in/*'] }));
+    check('S10 ✓ opens exactly the catalogue URL and hands off: no Koode guidance, no task, no site access on that host',
+      page.url() === 'https://services.parivahan.gov.in/ntr/#/knowurdetails/login' && q.koodeHandoff === 'services.parivahan.gov.in' && /നയിക്കില്ല/.test(q.koodeMl || '') &&
+      !koodeThere && !ss10['task:' + tabId] && perm10 === false, { url: page.url(), handoff: q.koodeHandoff, koodeThere: !!koodeThere, task: !!ss10['task:' + tabId], perm10 });
 
     // S6) Options → official → "വേണ്ട" (no) → nothing opens.
     await page.goto('chrome://newtab/').catch(() => {});

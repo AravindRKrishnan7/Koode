@@ -73,6 +73,54 @@
           video: { ml: 'ലൈസൻസ് അപേക്ഷ സ്റ്റാറ്റസ് ഓൺലൈൻ', en: 'driving licence application status online sarathi' }
         }
       ]
+    },
+    {
+      // LINK-ONLY entry (guide: false): Koode confirms and opens the verified official page, then hands off.
+      // It does not guide on these sites yet (not tested), so no Chrome site access is requested.
+      id: 'vehicle',
+      kind: 'government',
+      guide: false,
+      name: 'Parivahan vehicle services (Know Vehicle Details · Vahan)',
+      ml: 'പരിവാഹൻ വാഹന സേവനങ്ങൾ',
+      owner: 'Ministry of Road Transport & Highways, Government of India',
+      entry: 'https://services.parivahan.gov.in/ntr/#/knowurdetails/login',
+      hosts: ['services.parivahan.gov.in', 'vahan.parivahan.gov.in'],
+      verified: {
+        on: '2026-11-22',
+        by: 'Koode build: live fetch + headless-Chrome inspection (human sign-off pending)',
+        evidence: [
+          'https://parivahan.gov.in/ (MoRTH portal) links "Know Vehicle / DL Details" to exactly the details URL',
+          'Details page: "National Transport Repository — Citizen Login – Vehicle & Driving Licence Details" (MoRTH); mobile number, captcha and OTP login',
+          'https://vahan.parivahan.gov.in/vahanservice/ → "VAHAN 4.0 (Citizen Services)", MoRTH header, "Enter Registration Number"; the vahan host is linked from parivahan.gov.in',
+          'TLS certificate CN=*.parivahan.gov.in valid on both hosts; Vahan served from 164.100.69.3 (NIC range)',
+          'Not added: analytics.parivahan.gov.in/analytics/vehiclestatusreport answered 403 Forbidden in a real browser'
+        ],
+        recheck_by: '2027-02-22'
+      },
+      topic: ['vehicle', 'vehicles', 'car', 'bike', 'motorcycle', 'scooter', 'two wheeler', 'rc', 'rc book', 'registration certificate', 'vahan', 'vandi', 'vandiyude',
+        'വണ്ടി', 'വാഹന', 'വാഹനത്ത', 'കാർ', 'കാറ', 'ബൈക്ക', 'സ്കൂട്ടർ', 'ഇരുചക്ര', 'ആർസി', 'ആർ സി', 'വാഹൻ', 'വെഹിക്കിൾ'],
+      // A driving licence is Sarathi's: excluded unless the request is clearly about the vehicle record itself.
+      notTopic: ['driving', 'learner', 'learners', 'dl', 'sarathi', 'odikkan', 'ഡ്രൈവിംഗ്', 'ഡ്രൈവിങ്', 'ലേണേഴ്സ്', 'ലേണർ', 'സാരഥി', 'ഡിഎൽ', 'ഓടിക്കാൻ', 'ഓടിക്കാനുള്ള'],
+      strongTopic: ['rc', 'rc book', 'registration', 'vahan', 'ആർസി', 'രജിസ്ട്രേഷൻ', 'വാഹൻ'],
+      // Vehicle words alone ("car wash", "bike video") are not a government request: a service word, or an
+      // explicit official/government/website request, is required.
+      requireService: true,
+      scope: 'the vehicle record: registration (RC) details, owner, tax, fitness, insurance validity, transfer and other Vahan services (NOT driving licences)',
+      services: [
+        {
+          id: 'vehicle_details', en: 'Know your vehicle details (registration, owner, validity)', ml: 'വാഹനത്തിന്റെ വിവരങ്ങൾ അറിയാൻ',
+          url: 'https://services.parivahan.gov.in/ntr/#/knowurdetails/login',
+          words: ['details', 'detail', 'information', 'info', 'status', 'know', 'check', 'owner', 'validity', 'insurance', 'വിവര', 'അറിയ', 'നോക്ക', 'ഉടമ', 'സ്റ്റാറ്റസ്', 'ഡീറ്റെയിൽ', 'കാലാവധി'],
+          video: { ml: 'വാഹന വിവരങ്ങൾ ഓൺലൈനായി അറിയാം', en: 'check vehicle details online parivahan' }
+        },
+        {
+          id: 'vehicle_services', en: 'Vahan citizen services (transfer, tax, fitness, permits, duplicate RC)', ml: 'വാഹൻ സേവനങ്ങൾ (ഉടമസ്ഥാവകാശ കൈമാറ്റം, നികുതി, ഫിറ്റ്നസ്)',
+          url: 'https://vahan.parivahan.gov.in/vahanservice/',
+          words: ['transfer', 'ownership', 'tax', 'fitness', 'permit', 'hypothecation', 'duplicate rc', 'renew registration', 'address change', 'noc', 'pay tax',
+            'കൈമാറ്റ', 'ഉടമസ്ഥാവകാശ', 'നികുതി', 'ഫിറ്റ്നസ്', 'പെർമിറ്റ്', 'പുതുക്ക', 'ടാക്സ്'],
+          video: { ml: 'വാഹന ഉടമസ്ഥാവകാശ കൈമാറ്റം ഓൺലൈൻ', en: 'vahan vehicle ownership transfer online' }
+        }
+      ]
     }
   ];
 
@@ -107,12 +155,14 @@
       const hits = e.topicRes.filter((re) => re.test(t)).length;
       if (!hits) continue;
       const scored = e.services.map((s) => [s.res.filter((re) => re.test(t)).length, s]).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0]);
+      if (e.requireService && !scored.length && !OFFICIAL.test(t) && !GOVW.test(t)) continue;
       const cand = { entry: e, service: scored.length ? scored[0][1] : null, score: hits };
       if (!best || cand.score > best.score) best = cand;
     }
     return best;
   }
 
+  const GOVW = new RegExp('(?<![a-z])(?:government|govt|sarkar|sarkkar|parivahan)(?![a-z])|(?<![' + ML + '])(?:ഗവൺമെന്റ|ഗവണ്മെന്റ|ഗവർമെന്റ|സർക്കാർ|പരിവാഹൻ)', 'u');
   // What the user asked for: the official website, a video, or not said.
   const OFFICIAL = new RegExp('(?<![a-z])(?:official|website|web site|site|portal|online|apply online|government site|govt site|open|go to|take me)(?![a-z])|' +
     // Malayalam stems without the final virama, so case endings match (വെബ്സൈറ്റിൽ, സൈറ്റിലേക്ക്, യൂട്യൂബിൽ).
@@ -143,8 +193,14 @@
 
   const byId = (id) => CATALOGUE.find((e) => e.id === id) || null;
   const serviceOf = (entry, sid) => (entry && sid && entry.services.find((s) => s.id === sid)) || null;
-  const forHost = (host) => CATALOGUE.find((e) => e.hosts.includes(String(host || '').toLowerCase())) || null;
+  // Only entries Koode guides on count as guided sites (link-only entries are opened and handed off).
+  const forHost = (host) => CATALOGUE.find((e) => e.guide !== false && e.hosts.includes(String(host || '').toLowerCase())) || null;
   const origins = (entry) => entry.hosts.map((h) => 'https://' + h + '/*');
+  // The page to open: the sub-service's own verified URL, else the entry URL; always on the entry's hosts.
+  const urlFor = (entry, service) => {
+    const u = (service && service.url) || entry.entry;
+    try { const x = new URL(u); return x.protocol === 'https:' && entry.hosts.includes(x.hostname) ? u : null; } catch (_) { return null; }
+  };
   const onHosts = (entry, url) => { try { const u = new URL(url); return u.protocol === 'https:' && entry.hosts.includes(u.hostname); } catch (_) { return false; } };
 
   // Tutorial search for a service (M1 search shape): Malayalam first, English + "malayalam" fallback.
@@ -161,7 +217,7 @@
       ' The user types every personal detail, captcha and OTP themselves.';
   }
 
-  const api = { CATALOGUE, match, excluded, wants, answer, byId, serviceOf, forHost, origins, onHosts, videoSearch, taskHint };
+  const api = { CATALOGUE, match, excluded, wants, urlFor, answer, byId, serviceOf, forHost, origins, onHosts, videoSearch, taskHint };
   globalThis.KoodeCatalogue = api;
   if (typeof globalThis.Koode === 'object' && globalThis.Koode) globalThis.Koode.catalogue = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

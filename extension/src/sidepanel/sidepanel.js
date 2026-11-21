@@ -92,9 +92,12 @@ function showServiceCard(entry, service, onYes, onNo) {
   c.append(el('span', 'badge', '🛡️ ഔദ്യോഗിക സർക്കാർ സൈറ്റ് · Official site'));
   c.append(el('h3', '', entry.ml));
   c.append(el('div', 'meta', entry.name + (service ? ' — ' + service.en : '')));
-  c.append(el('div', 'host', 'https://' + entry.hosts[0]));
+  const linkOnly = entry.guide === false;
+  c.append(el('div', 'host', linkOnly ? (Cat.urlFor(entry, service) || entry.entry) : 'https://' + entry.hosts[0]));
   c.append(el('div', 'meta', `${entry.owner}. Koode verified this address on ${entry.verified.on}.`));
-  c.append(el('div', 'note', 'ആദ്യമായി തുറക്കുമ്പോൾ ഈ ഒരു സൈറ്റിന് മാത്രം Chrome അനുവാദം ചോദിക്കും. പാസ്‌വേഡ്, OTP, ലൈസൻസ് നമ്പർ പോലുള്ളവ നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യണം; Koode അവ വായിക്കില്ല.'));
+  c.append(el('div', 'note', linkOnly
+    ? 'Koode ഈ ഔദ്യോഗിക പേജ് തുറന്നു തരും. ഈ സൈറ്റിൽ ഘട്ടം ഘട്ടമായി Koode ഇപ്പോൾ നയിക്കില്ല. വാഹന നമ്പർ, മൊബൈൽ നമ്പർ, OTP എന്നിവ നിങ്ങൾ തന്നെ നൽകണം. · Koode opens this official page and hands over; it does not guide on this site yet.'
+    : 'ആദ്യമായി തുറക്കുമ്പോൾ ഈ ഒരു സൈറ്റിന് മാത്രം Chrome അനുവാദം ചോദിക്കും. പാസ്‌വേഡ്, OTP, ലൈസൻസ് നമ്പർ പോലുള്ളവ നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യണം; Koode അവ വായിക്കില്ല.'));
   const box = el('div', 'actions');
   box.append(makeButton({ id: 'svc-yes', cls: 'btn-primary', label: '✓ തുറക്കാം · Open', run: onYes }), makeButton({ id: 'svc-no', cls: 'btn-quiet', label: '✗ വേണ്ട · Cancel', run: onNo }));
   c.append(box);
@@ -288,6 +291,7 @@ function confirmService(entry, service, goal, opts, talk) {
 function approveByClick(opts, talk) {
   const p = S.pending;
   if (!p || p.kind !== 'confirm') return;
+  if (p.entry.guide === false) { S.pending = null; return openService(p, opts, talk); } // link-only: no site access needed
   chrome.permissions.request({ origins: Cat.origins(p.entry) }).then((ok) => {
     document.body.dataset.koodeGranted = String(ok);
     if (!ok) { setState('idle'); return talk('അനുവാദം നൽകിയില്ല; ഒന്നും തുറന്നില്ല.', 'Access was not granted, so nothing was opened.'); }
@@ -313,6 +317,12 @@ async function openService(p, opts, talk) {
   if (!r || r.error) { setState('error'); return say({ ml: 'തുറക്കാനായില്ല.', en: 'Could not open it: ' + (r && r.error || 'no response') }); }
   document.body.dataset.koodeNavigated = p.entry.id;
   if (r.newTab) document.body.dataset.koodeNewTab = String(r.tabId);
+  if (r.handoff) {
+    // Opened and handed over: Koode does not guide on this site.
+    document.body.dataset.koodeHandoff = new URL(r.url).host;
+    setState('idle');
+    talk(Goals.MSG.handoff.ml, Goals.MSG.handoff.en);
+  }
   log(`opening ${p.entry.hosts[0]}${r.newTab ? ' in a new tab (typed input kept)' : ''}`);
 }
 

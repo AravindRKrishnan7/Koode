@@ -16,15 +16,12 @@ const onYT = (t) => S.classify(G.redact(t).text, { siteId: 'youtube' });
 // The transcript from the live test (already on youtube.com/results).
 const LIVE = 'എനിക്ക് എന്റെ വണ്ടിയുടെ ലൈസൻസ് നമ്പർ കുറിച്ച് അറിയണമായിരുന്നു. അപ്പോൾ അതിന് ഗവൺമെന്റ് വെബ്സൈറ്റ്സ് ഏതേലും ഉണ്ടോ? ഉണ്ടെങ്കിൽ എനിക്ക് അങ്ങോട്ട് പോകണം.';
 
-test('live transcript on YouTube → intent planner (not the YouTube page planner), and never Sarathi', async () => {
+test('live transcript on YouTube → the verified VEHICLE service (official, link-only), never the page planner or Sarathi', async () => {
   const r = onYT(LIVE);
-  assert.equal(r.type, 'intent');
-  assert.equal(Cat.match(LIVE), null, 'vehicle licence/registration is not the driving-licence portal');
+  assert.deepEqual([r.type, r.entry.id, r.want], ['service', 'vehicle', 'official']);
+  assert.notEqual(Cat.match(LIVE).entry.id, 'sarathi', 'vehicle licence/registration is not the driving-licence portal');
   const { result } = await planIntent({ goal: LIVE, site_id: 'youtube' }, { provider: 'mock', model: 'mock' });
-  assert.deepEqual([result.type, result.service_id], ['service', '']);
-  const a = G.intentToAction(result, { guidable: true, goal: LIVE });
-  assert.deepEqual([a.kind, a.reason], ['say', 'service_not_verified'], 'explains: no verified official site');
-  assert.ok(a.offer && /വണ്ടി/.test(a.offer.query), 'a tutorial about the vehicle is offered (button, not automatic)');
+  assert.deepEqual([result.type, result.service_id], ['service', 'vehicle']);
 });
 
 test('explicit video requests search YouTube even when already on YouTube (Malayalam, English, Manglish)', () => {
@@ -55,11 +52,12 @@ test('a driving-licence video request (catalogue topic) still becomes a search o
   assert.match(r.search.query, /ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ/);
 });
 
-test('vehicle registration / RC never routes to Sarathi; driving licence still does', () => {
+test('vehicle registration / RC never routes to Sarathi (it goes to the vehicle entry); driving licence still does', () => {
   for (const t of ['വണ്ടിയുടെ ലൈസൻസ് പുതുക്കണം', 'vehicle registration details', 'RC book details online', 'എന്റെ വാഹനത്തിന്റെ രജിസ്ട്രേഷൻ വിവരങ്ങൾ']) {
-    assert.equal(Cat.match(t), null, t);
-    assert.notEqual(S.classify(t, { siteId: null }).type, 'service', t);
-    assert.equal(onYT(t).type, 'intent', t + ' (on YouTube: intent planner, not the page planner)');
+    assert.equal(Cat.match(t).entry.id, 'vehicle', t);
+    assert.ok(Cat.excluded(Cat.byId('sarathi'), t), t + ' is outside Sarathi');
+    const r = onYT(t);
+    assert.deepEqual([r.type, r.entry.id], ['service', 'vehicle'], t + ' (on YouTube too, not the page planner)');
   }
   for (const [t, sub] of [['എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം', 'dl_details'], ['driving licence renewal', 'dl_renewal'], ['ലേണേഴ്സ് ലൈസൻസിന് അപേക്ഷിക്കണം', 'learner_licence']]) {
     const r = onYT(t);
@@ -90,4 +88,56 @@ test('intent prompt tells the model the Sarathi entry excludes vehicle registrat
   let seen = '';
   await planIntent({ goal: 'x' }, { provider: 'groq', model: 'x' }, { llm: async (_c, sys, user) => { seen = sys + user; return '{"type":"ask"}'; } });
   assert.match(seen, /NOT vehicle registration/);
+});
+
+// ---- Live 0.5.2: "I want information about my car through a government website" → model said "unsupported" ----
+const CAR_LIVE = 'എനിക്ക് എന്റെ കാറിനെപ്പറ്റിയുള്ള വിവരങ്ങൾ അറിയാൻ വേണ്ടി ഗവൺമെന്റ് വെബ്സൈറ്റ് കാണാം.';
+
+test('vehicle information requests (Malayalam, English, Manglish) → verified vehicle entry, official route, never Sarathi', () => {
+  const cases = [
+    [CAR_LIVE, null, 'vehicle_details', 'official'],
+    ['I want information about my car through a government website', null, 'vehicle_details', 'official'],
+    ['check my vehicle RC details', 'youtube', 'vehicle_details', 'unspecified'],
+    ['ente car-nte details government website il nokkanam', null, 'vehicle_details', 'official'],
+    ['enikku ente vandiyude RC details venam', 'whatsapp', 'vehicle_details', 'unspecified'],
+    ['എന്റെ ബൈക്കിന്റെ ഇൻഷുറൻസ് കാലാവധി അറിയണം', null, 'vehicle_details', 'unspecified'],
+    ['vehicle ownership transfer online', 'youtube', 'vehicle_services', 'official'],
+    ['വാഹന നികുതി ഓൺലൈനായി അടയ്ക്കണം', null, 'vehicle_services', 'official']
+  ];
+  for (const [t, here, sub, want] of cases) {
+    const r = S.classify(G.redact(t).text, { siteId: here });
+    assert.deepEqual([r.type, r.entry && r.entry.id, r.service && r.service.id, r.want], ['service', 'vehicle', sub, want], t);
+  }
+});
+
+test('vehicle words alone are not a government request; video and driving-licence requests keep their routes', () => {
+  assert.notEqual(S.classify('car wash near me', { siteId: null }).type, 'service');
+  assert.equal(S.classify('bike repair video', { siteId: 'youtube' }).type, 'youtube_search');
+  assert.equal(S.classify('vandiyude registration video kanikku', { siteId: 'youtube' }).type, 'youtube_search');
+  assert.equal(S.classify('എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം', { siteId: null }).entry.id, 'sarathi');
+  assert.equal(Cat.match('വണ്ടി ഓടിക്കാൻ ലൈസൻസ് എടുക്കണം'), null, 'licence to drive is not the vehicle record');
+});
+
+test('vehicle entry is link-only: verified URLs, no guidance, no site access, analytics page excluded', () => {
+  const e = Cat.byId('vehicle');
+  assert.equal(e.guide, false);
+  assert.equal(Cat.urlFor(e, Cat.serviceOf(e, 'vehicle_details')), 'https://services.parivahan.gov.in/ntr/#/knowurdetails/login');
+  assert.equal(Cat.urlFor(e, Cat.serviceOf(e, 'vehicle_services')), 'https://vahan.parivahan.gov.in/vahanservice/');
+  assert.equal(S.forUrl('https://vahan.parivahan.gov.in/vahanservice/'), null, 'not a guided site');
+  assert.ok(!JSON.stringify(Cat.CATALOGUE.map((x) => [x.entry, x.services.map((s) => s.url)])).includes('analytics.parivahan'), '403 page not offered');
+  assert.equal(Cat.urlFor({ ...e, entry: 'https://evil.example/x' }, null), null, 'URLs off the entry hosts are refused');
+});
+
+test('model "unsupported" without a safety reason → the matching verified service; real safety refusals stay refusals', () => {
+  const a = G.intentToAction({ type: 'unsupported', content_lang: 'ml', query_ml: '', query_en: '' }, { guidable: false, goal: CAR_LIVE });
+  assert.deepEqual([a.kind, a.entry.id, a.want], ['service', 'vehicle', 'official']);
+  assert.equal(G.intentToAction({ type: 'unsupported', reason: 'unsafe_query' }, { goal: CAR_LIVE }).kind, 'say');
+  assert.equal(G.intentToAction({ type: 'unsupported' }, { goal: 'play loud music' }).kind, 'say');
+});
+
+test('intent prompt: personal vehicle/licence information is a service, not unsupported; vehicle scope listed', async () => {
+  let seen = '';
+  await planIntent({ goal: 'x' }, { provider: 'groq', model: 'x' }, { llm: async (_c, sys, user) => { seen = sys + user; return '{"type":"ask"}'; } });
+  assert.match(seen, /never unsupported/);
+  assert.match(seen, /"id":"vehicle"/);
 });

@@ -38,12 +38,12 @@ and a step uses about 1–3k tokens, so a short "AI busy, retrying in N s" count
 
 ```bash
 cd tests && npm install
-npm run unit                                                   # 71 unit tests: routing, redaction, query safety,
+npm run unit                                                   # 76 unit tests: routing, redaction, query safety,
                                                                # intent validation, catalogue, sanitiser
 npx @puppeteer/browsers install chrome@stable --path ~/.cache/koode-cft   # Chrome for Testing (loads unpacked extensions)
 (cd ../backend && PORT=8797 KOODE_PROVIDER=mock KOODE_SPEECH=mock npm start) &
 KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs                  # full journey + goals + grant (43 checks)
-KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs --only services  # Sarathi flow on a stand-in (21 checks)
+KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs --only services  # Sarathi flow + vehicle hand-off on stand-ins (23 checks)
 KOODE_BACKEND=http://localhost:8797 node e2e/run.mjs --repeat 2           # form / settings / voice regression
 ```
 
@@ -56,7 +56,7 @@ out, with the mock planner and no typing on government pages.
 | What | How it was verified |
 |---|---|
 | Core loop: voice → confirm → arrow → verified click → next step | **Real Groq + real Sarvam** in Chrome (tags `koode-groq-verified`: 51/51 steps, voice 3/3; `koode-judging-final`) |
-| YouTube goals, Sarathi services, privacy, permissions, new UI | Mock planner and mock speech in real Chrome (unit 71/71, journey 43/43, services 21/21, regression ×2). Live **logged-out** youtube.com and sarathi.parivahan.gov.in with the mock planner, as far as the mobile-number field. |
+| YouTube goals, Sarathi services, privacy, permissions, new UI | Mock planner and mock speech in real Chrome (unit 76/76, journey 43/43, services 23/23, regression ×2). Live **logged-out** youtube.com and sarathi.parivahan.gov.in with the mock planner, as far as the mobile-number field. |
 | Real Groq/Sarvam on the goal-driven and Sarathi flows | Pending the final live run before submission |
 
 **Known limits:** one verified government service so far (Sarathi; Kerala route); the first Chrome site-access

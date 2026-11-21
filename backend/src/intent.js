@@ -24,7 +24,8 @@ type:
   Never invent a website: if no VERIFIED_SERVICES entry fits, leave service_id empty. Read "covers" strictly: vehicle registration (RC), vehicle tax or permits are not driving-licence services.
 - on_page: the user wants help with the page that is open now (CURRENT_SITE).
 - ask: too vague to act on. question_ml: one short, polite Malayalam question.
-- unsupported: harmful, adult, illegal or dangerous requests, or anything needing passwords, OTPs or payments.
+- unsupported: ONLY harmful, adult, illegal or dangerous requests, or asking Koode itself to enter passwords, OTPs or payments.
+  Information about the user's own vehicle, licence, documents or applications is a "service" request, never unsupported (the user types private details themselves).
 
 Queries (youtube_search and service):
 - query_ml: 2–6 plain search words in Malayalam script, the topic only (drop "വീഡിയോ", "കാണണം", "പഠിക്കണം", "എനിക്ക്").
