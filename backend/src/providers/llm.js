@@ -28,6 +28,13 @@ async function post(url, headers, body, timeoutMs, meta = {}) {
         await sleep(wait);
         continue;
       }
+      if (res.status === 429) {
+        // Out of back-off budget: tell the client how long to wait instead of a raw provider error.
+        const err = new Error('model rate limit reached');
+        err.code = 'rate_limited';
+        err.retryAfterMs = wait;
+        throw err;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
       return JSON.parse(text);
     } finally {
@@ -45,6 +52,11 @@ async function openaiCompatible({ baseUrl, key, model, system, user, timeoutMs, 
   };
   if (jsonMode) body.response_format = { type: 'json_object' };
   const data = await post(baseUrl + '/chat/completions', { Authorization: 'Bearer ' + key, ...extraHeaders }, body, timeoutMs, meta);
+  if (meta && data.usage) {
+    meta.tokens = meta.tokens || { prompt: 0, completion: 0 };
+    meta.tokens.prompt += data.usage.prompt_tokens || 0;
+    meta.tokens.completion += data.usage.completion_tokens || 0;
+  }
   return data.choices?.[0]?.message?.content || '';
 }
 

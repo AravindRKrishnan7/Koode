@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '../..');
-const EXT = path.join(ROOT, 'extension');
+const EXT = process.env.KOODE_EXT || path.join(ROOT, 'extension');
 const ARTIFACTS = path.join(ROOT, 'artifacts', 'e2e');
 const BACKEND = process.env.KOODE_BACKEND || 'http://localhost:8787';
 const LOG = path.join(ROOT, 'backend', 'logs', 'plan-requests.jsonl');
@@ -315,6 +315,11 @@ async function main() {
     llmRequests: entries.length, retried: entries.filter((e) => e.result.attempts > 1).length,
     cannotFind: entries.filter((e) => e.result.status === 'cannot_find').length,
     rateLimited: { requests: waits.length, totalWaitMs: waits.reduce((x, y) => x + y, 0) },
+    tokensPerRequest: (() => {
+      const t = entries.map((e) => e.result.tokens).filter(Boolean);
+      const avg = (k) => t.length ? Math.round(t.reduce((a, x) => a + (x[k] || 0), 0) / t.length) : null;
+      return { requests: t.length, prompt: avg('prompt'), completion: avg('completion') };
+    })(),
     latencyMs: { mean: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : null, p50: pct(0.5), p95: pct(0.95), max: lat[lat.length - 1] ?? null }
   };
   const vr = results.runs.filter((r) => r.input === 'voice');

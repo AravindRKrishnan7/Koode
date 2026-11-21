@@ -76,7 +76,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, result);
     } catch (e) {
       console.error('[plan] error', e.message);
-      audit({ error: e.message });
+      audit({ error: e.message, code: e.code });
+      if (e.code === 'rate_limited') return send(res, 503, { error: e.message, code: e.code, retry_after_ms: e.retryAfterMs });
       return send(res, 502, { error: e.message });
     }
   }

@@ -27,9 +27,9 @@ export async function planStep(body, cfg, { llm = complete } = {}) {
       user = buildUserMessage(req) + '\n\nYou answered cannot_find. Re-check CANDIDATES: if any menu/settings/account/tab/icon control could plausibly lead toward the goal, guide to it; otherwise answer cannot_find again.';
       continue;
     }
-    if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, attempts: attempt } };
+    if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, tokens: meta.tokens, attempts: attempt } };
     lastReason = v.reason;
     user = buildUserMessage(req) + `\n\nYour previous answer was rejected (${v.reason}). Return valid JSON and copy target_id exactly from CANDIDATES.`;
   }
-  return { req, result: { status: 'cannot_find', target_id: null, instruction_en: 'Planner returned an invalid target (' + lastReason + ').', instruction_ml: 'ശരിയായ ഘടകം കണ്ടെത്താനായില്ല.', planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, attempts: 2, rejected: lastReason } };
+  return { req, result: { status: 'cannot_find', target_id: null, instruction_en: 'Planner returned an invalid target (' + lastReason + ').', instruction_ml: 'ശരിയായ ഘടകം കണ്ടെത്താനായില്ല.', planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, tokens: meta.tokens, attempts: 2, rejected: lastReason } };
 }
