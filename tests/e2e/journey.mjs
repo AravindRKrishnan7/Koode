@@ -224,6 +224,7 @@ async function main() {
     let sp = null; // the page event fires before the URL commits, so look the page up by URL
     for (let i = 0; i < 100 && !sp; i++) { sp = ctx.pages().find((p) => p.url().includes('sidepanel.html?tabId=' + tabId)); if (!sp) await sleep(100); }
     if (!sp) throw new Error('side panel window did not open');
+    await sp.setViewportSize({ width: 380, height: 900 }); // a real Chrome side panel is ~360–400 px wide
     await waitPanel(sp, (q) => q.koodeReady === 'true', 'panel ready', 10000);
     return sp;
   };
@@ -465,9 +466,11 @@ async function main() {
     await page.bringToFront();
     let ia = readIntentLog().length, at = readLog().length;
 
+    await sp.screenshot({ path: path.join(ARTIFACTS, 'ui-panel-idle.png'), fullPage: true });
     // S1) Ambiguous goal → two options; nothing opens yet; no model call.
     await speak(sp, 'എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം');
     let q = await waitPanel(sp, (x) => x.koodeOptions, 'options card');
+    await sp.screenshot({ path: path.join(ARTIFACTS, 'ui-panel-choices.png'), fullPage: true });
     check('S1 "ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം" → options: official website / Malayalam tutorial (rule, no model, no navigation)',
       q.koodeIntent === 'service' && q.koodeService === 'sarathi/dl_details' && (await sp.locator('#opt-official').count()) === 1 && (await sp.locator('#opt-video').count()) === 1 &&
       /^chrome:\/\/new|about:blank/.test(page.url()) && intentEntries(ia).length === 0, { route: q.koodeIntent, service: q.koodeService, url: page.url(), ml: (q.koodeMl || '').slice(0, 60) });
@@ -475,6 +478,7 @@ async function main() {
     // S2) "ഒന്ന്" (one) by voice → confirmation card with the verified host; still nothing opens.
     await speak(sp, 'ഒന്ന്');
     q = await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'confirm card');
+    await sp.screenshot({ path: path.join(ARTIFACTS, 'ui-panel-confirm.png'), fullPage: true });
     check('S2 voice "ഒന്ന്" → explicit confirmation card naming sarathi.parivahan.gov.in and the verification date; no navigation yet',
       /sarathi\.parivahan\.gov\.in/.test(q.koodeMl || '') && /2026-11-22/.test(q.koodeMl || '') && (await sp.locator('#svc-yes').count()) === 1 && /^chrome:\/\/new|about:blank/.test(page.url()), (q.koodeMl || '').slice(0, 120));
 
@@ -482,7 +486,8 @@ async function main() {
     await sp.locator('#svc-yes').click();
     await page.waitForURL(/sarathi\.parivahan\.gov\.in\/sarathiservice\/stateSelection\.do/, { timeout: 15000 });
     check('S3 ✓ opens exactly the catalogue entry URL', page.url() === 'https://sarathi.parivahan.gov.in/sarathiservice/stateSelection.do', page.url());
-    const sv = await followSteps(page, 'sarathi', { maxSteps: 10, act: sarathiAct(page) });
+    const sv = await followSteps(page, 'sarathi', { maxSteps: 10, act: async (el, p) => { if (Number(p.koodeStep) === 6) await sp.screenshot({ path: path.join(ARTIFACTS, 'ui-panel-progress.png'), fullPage: true }); return sarathiAct(page)(el); } });
+    await sp.screenshot({ path: path.join(ARTIFACTS, 'ui-panel-done.png'), fullPage: true });
     const labels = sv.steps.map((x) => x.target);
     const s3req = logEntries(at).filter((e) => e.request);
     check('S3 popup over the state list: covered controls left out (popup flag) and the arrow goes to its × first',

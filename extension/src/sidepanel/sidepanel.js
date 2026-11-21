@@ -37,19 +37,70 @@ function say({ ml, en, notice }) {
   document.body.dataset.koodeEn = $('en').textContent;
   document.body.dataset.koodeMl = $('ml').textContent;
 }
+// A short notice with optional buttons (privacy note, microphone grant, tutorial offer…).
 function setNotice(text, action) {
   const n = $('notice');
-  n.textContent = text || '';
+  n.className = 'notice';
+  n.textContent = '';
+  if (text) { const p = document.createElement('div'); p.textContent = text; n.appendChild(p); }
   const actions = !action ? [] : Array.isArray(action) ? action : [action];
-  if (actions.length) n.appendChild(document.createElement('br'));
-  for (const a of actions) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.textContent = a.label; b.id = a.id || '';
-    b.addEventListener('click', a.run);
-    n.appendChild(b);
+  if (actions.length) {
+    const box = document.createElement('div');
+    box.className = 'actions' + (actions.length > 1 ? ' row' : '');
+    for (const a of actions) box.appendChild(makeButton(a));
+    n.appendChild(box);
   }
   n.classList.toggle('hidden', !text);
   if (text) document.body.dataset.koodeNotice = text; else delete document.body.dataset.koodeNotice;
+}
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function makeButton(a) {
+  const b = el('button', a.cls || '');
+  b.type = 'button'; b.id = a.id || '';
+  b.textContent = a.label;
+  b.addEventListener('click', a.run);
+  return b;
+}
+// Two big choice cards: official website / Malayalam tutorial (ids kept for tests and keyboard users).
+function showChoices(entry, onOfficial, onVideo) {
+  const n = $('notice');
+  n.className = 'notice cards';
+  n.textContent = '';
+  n.appendChild(el('div', 'lead', 'എങ്ങനെ സഹായിക്കണം? · How should I help?'));
+  const card = (id, cls, icon, num, title, sub, run) => {
+    const b = el('button', 'choice ' + cls); b.type = 'button'; b.id = id;
+    b.append(el('span', 'ic', icon));
+    const t = el('span'); t.append(el('span', 't', title), el('span', 's', sub)); b.append(t, el('span', 'num', num));
+    b.addEventListener('click', run);
+    return b;
+  };
+  const box = el('div', 'actions');
+  box.append(
+    card('opt-official', 'official', '🏛️', '1', Goals.MSG.optOfficial.ml, `${Goals.MSG.optOfficial.en} · ${entry.hosts[0]}`, onOfficial),
+    card('opt-video', 'video', '▶️', '2', Goals.MSG.optVideo.ml, `${Goals.MSG.optVideo.en} · YouTube`, onVideo));
+  n.appendChild(box);
+  n.classList.remove('hidden');
+  document.body.dataset.koodeNotice = 'choices';
+}
+// Confirmation before opening an official site: who runs it, the exact host, when Koode verified it.
+function showServiceCard(entry, service, onYes, onNo) {
+  const n = $('notice');
+  n.className = 'notice cards';
+  n.textContent = '';
+  const c = el('div', 'card');
+  c.append(el('span', 'badge', '🛡️ ഔദ്യോഗിക സർക്കാർ സൈറ്റ് · Official site'));
+  c.append(el('h3', '', entry.ml));
+  c.append(el('div', 'meta', entry.name + (service ? ' — ' + service.en : '')));
+  c.append(el('div', 'host', 'https://' + entry.hosts[0]));
+  c.append(el('div', 'meta', `${entry.owner}. Koode verified this address on ${entry.verified.on}.`));
+  c.append(el('div', 'note', 'ആദ്യമായി തുറക്കുമ്പോൾ ഈ ഒരു സൈറ്റിന് മാത്രം Chrome അനുവാദം ചോദിക്കും. പാസ്‌വേഡ്, OTP, ലൈസൻസ് നമ്പർ പോലുള്ളവ നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യണം; Koode അവ വായിക്കില്ല.'));
+  const box = el('div', 'actions');
+  box.append(makeButton({ id: 'svc-yes', cls: 'btn-primary', label: '✓ തുറക്കാം · Open', run: onYes }), makeButton({ id: 'svc-no', cls: 'btn-quiet', label: '✗ വേണ്ട · Cancel', run: onNo }));
+  c.append(box);
+  n.appendChild(c);
+  n.classList.remove('hidden');
+  document.body.dataset.koodeNotice = 'confirm-service';
 }
 
 // Speaks Malayalam through the backend (Sarvam, or the labelled mock in tests). Text stays on screen regardless.
@@ -67,7 +118,7 @@ async function speak(text) {
 }
 // The voice module reports level/speaking through Koode.panel hooks.
 Object.assign(globalThis.Koode.panel, {
-  setLevel: (v) => { $('level').style.width = Math.round(v * 100) + '%'; },
+  setLevel: (v) => { $('level').style.width = Math.round(v * 100) + '%'; $('micwrap').style.setProperty('--lvl', String(Math.min(1, v * 1.6))); },
   setSpeaking: (on) => document.body.classList.toggle('speaking', !!on),
   releaseMic: () => micUp()
 });
@@ -82,8 +133,11 @@ async function bindTab() {
   S.url = (tab && tab.url) || '';
   S.site = tab ? Sites.forUrl(S.url) : null;
   const label = S.site ? S.site.name : /^chrome:\/\/newtab|^chrome-search:|^about:blank|^chrome:\/\/new-tab-page/.test(S.url) || !S.url ? 'New Tab' : 'a page Koode does not guide';
-  $('where').textContent = 'ഇപ്പോഴത്തെ ടാബ് · Current tab: ' + label;
+  $('where').textContent = 'ഇപ്പോഴത്തെ ടാബ് · ' + label;
   document.body.dataset.koodeWhere = label;
+  document.body.dataset.koodeGuidable = String(!!S.site);
+  $('trust').classList.toggle('hidden', !(S.site && S.site.catalogue));
+  updateControls();
   document.body.dataset.koodeTab = String(S.tabId || '');
   if (port) port.postMessage({ type: 'hello', windowId: S.windowId, tabId: PINNED_TAB });
   return tab;
@@ -95,6 +149,7 @@ async function handle(text, opts = {}) {
   if (!raw) return;
   S.voiceSession = !!opts.voice;
   S.exiting = false;
+  resetSteps();
   clearTimeout(closeTimer);
   await bindTab();
   // Personal numbers (phone, Aadhaar, licence, PAN…) are removed here, before routing, any model call,
@@ -213,10 +268,9 @@ function serviceFlow({ entry, service, want, goal }, opts, talk) {
   const what = service ? service.ml : entry.ml;
   talk(`${what}: ${Goals.MSG.choose.ml}`, `${service ? service.en : entry.name}: ${Goals.MSG.choose.en}`);
   document.body.dataset.koodeOptions = 'official,video';
-  setNotice(`🏛️ ${entry.ml} · ${entry.hosts[0]}`, [
-    { label: '1 · 🏛️ ' + Goals.MSG.optOfficial.ml, id: 'opt-official', run: () => confirmService(entry, service, goal, opts, talk) },
-    { label: '2 · ▶ ' + Goals.MSG.optVideo.ml, id: 'opt-video', run: () => { S.pending = null; search(Cat.videoSearch(entry, service), goal, opts, talk); } }
-  ]);
+  showChoices(entry,
+    () => confirmService(entry, service, goal, opts, talk),
+    () => { S.pending = null; search(Cat.videoSearch(entry, service), goal, opts, talk); });
 }
 
 function confirmService(entry, service, goal, opts, talk) {
@@ -226,10 +280,8 @@ function confirmService(entry, service, goal, opts, talk) {
   talk(`ഔദ്യോഗിക സൈറ്റ്: ${entry.ml}, ${host}. Koode പരിശോധിച്ചത് ${entry.verified.on}. ${service ? service.ml + '. ' : ''}തുറക്കട്ടെ? "ശരി" അല്ലെങ്കിൽ "വേണ്ട" എന്ന് പറയൂ.`,
     `Official site: ${entry.name} (${host}), verified by Koode on ${entry.verified.on}. Open it? Press ✓ or say "yes" / "no".`);
   document.body.dataset.koodeConfirmService = entry.id;
-  setNotice(`🏛️ ${entry.name} · ${host} · verified ${entry.verified.on}`, [
-    { label: '✓ തുറക്കാം · Open', id: 'svc-yes', run: () => approveByClick(opts, talk) },
-    { label: '✗ വേണ്ട · Cancel', id: 'svc-no', run: () => { S.pending = null; setState('idle'); talk(Goals.MSG.cancelled.ml, Goals.MSG.cancelled.en); } }
-  ]);
+  showServiceCard(entry, service, () => approveByClick(opts, talk),
+    () => { S.pending = null; setState('idle'); talk(Goals.MSG.cancelled.ml, Goals.MSG.cancelled.en); });
 }
 
 // ✓ pressed: Chrome's access request must come straight from the click (user gesture), for this host only.
@@ -401,20 +453,75 @@ function submit() {
 }
 $('f').addEventListener('submit', (e) => { e.preventDefault(); submit(); });
 $('end').addEventListener('click', () => exit(S.voiceSession));
-for (const s of Sites.SITES) {
-  const b = document.createElement('button');
-  b.type = 'button'; b.textContent = s.name; b.dataset.site = s.id;
-  b.addEventListener('click', () => handle('open ' + s.words[0]));
+// Example requests (typed when tapped; the same routing as speech).
+for (const [ml, title] of [['ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം', 'Driving licence details (official site or tutorial)'],
+  ['സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ', 'Malayalam videos on YouTube'], ['വാട്സ്ആപ്പ് തുറക്കൂ', 'Open WhatsApp Web'], ['അപേക്ഷാ ഫോം തുറക്കൂ', 'Practice application form']]) {
+  const b = el('button', '', ml);
+  b.type = 'button'; b.title = title;
+  b.addEventListener('click', () => handle(ml));
   $('sitelist').appendChild(b);
 }
 
 // ---- mirror of the in-page guide ----
+// ---- guidance progress (mirror of the in-page guide): step number, what to use now, steps so far ----
+const STEPS = [];
+function resetSteps() { STEPS.length = 0; renderSteps(null); }
+function renderSteps(p) {
+  const box = $('progress');
+  const show = STEPS.length > 0 || (p && p.active && p.step > 0);
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const cur = STEPS[STEPS.length - 1];
+  const finished = p && ['done', 'ended'].includes(p.state);
+  $('stepno').textContent = finished ? '✓ പൂർത്തിയായി' : 'ഘട്ടം ' + (cur ? cur.n : (p && p.step) || 1);
+  $('now').textContent = finished ? 'Done' : cur ? cur.label : '';
+  const ol = $('steps');
+  ol.textContent = '';
+  for (const st of STEPS.slice(-6)) {
+    const li = el('li', 'step ' + (st.done || finished ? 'done' : st === cur ? 'current' : ''));
+    li.append(el('span', 'dot', st.done || finished ? '✓' : String(st.n)), el('span', 'lab', st.label));
+    ol.appendChild(li);
+  }
+  updateControls(p);
+}
+function trackSteps(p) {
+  if (!p) return;
+  if (p.step && p.target) {
+    const last = STEPS[STEPS.length - 1];
+    if (!last || last.n !== p.step) { if (last) last.done = true; STEPS.push({ n: p.step, label: p.target, done: false }); }
+    else last.label = p.target;
+  }
+  const last = STEPS[STEPS.length - 1];
+  if (last && (p.state === 'verified' || p.state === 'done')) last.done = true;
+  renderSteps(p);
+}
+let lastProgress = null;
+function updateControls(p) {
+  p = p || lastProgress;
+  const guidable = !!S.site;
+  const active = !!(p && (p.active || ['error', 'stopped', 'recovering'].includes(p.state)));
+  $('ctl-continue').disabled = !guidable || !active;
+  $('ctl-retry').disabled = !guidable || !(p && p.goal !== undefined && (p.active || p.state === 'error' || p.state === 'stopped'));
+  $('ctl-stop').disabled = !guidable || !(p && p.active);
+}
+const toTab = (msg) => S.tabId ? chrome.tabs.sendMessage(S.tabId, msg).catch(() => null) : Promise.resolve(null);
+// Continue: show the current step again; after Stop or a problem, pick the task up again.
+$('ctl-continue').addEventListener('click', () => {
+  const resume = lastProgress && ['stopped', 'error'].includes(lastProgress.state);
+  log(resume ? 'continue: resume the task' : 'continue: repeat the current step');
+  toTab({ type: resume ? 'koode:retry' : 'koode:repeat' });
+});
+$('ctl-retry').addEventListener('click', () => { log('retry: look at the page again'); toTab({ type: 'koode:retry' }); });
+$('ctl-stop').addEventListener('click', () => { log('stop guiding'); toTab({ type: 'koode:stop' }); });
+
 function showProgress(p) {
   if (!p || (S.tabId && p.tabId !== S.tabId) || S.exiting) return;
+  lastProgress = p;
   if (p.state) setState(p.state);
+  trackSteps(p);
   document.body.dataset.koodeStep = String(p.step || 0);
   if (p.ml || p.en) say({ ml: p.ml, en: p.en });
-  if (p.site) $('where').textContent = 'ഇപ്പോഴത്തെ ടാബ് · Current tab: ' + p.site + (p.active ? ' · guiding' : '');
+  if (p.site) $('where').textContent = 'ഇപ്പോഴത്തെ ടാബ് · ' + p.site + (p.active ? ' · വഴികാട്ടുന്നു' : '');
   if (p.arrived) document.body.dataset.koodeArrived = p.siteId || '';
   if (p.login) document.body.dataset.koodeLogin = 'true';
   if (p.offSite) document.body.dataset.koodeOffSite = 'true';
@@ -429,7 +536,7 @@ function connect() {
     if (m.type === 'progress') showProgress(m.progress);
     if (m.type === 'speak') speak(m.text);
     if (m.type === 'hush') voice.hush();
-    if (m.type === 'navigating') { S.exiting = false; delete document.body.dataset.koodeArrived; delete document.body.dataset.koodeLogin; }
+    if (m.type === 'navigating') { S.exiting = false; resetSteps(); delete document.body.dataset.koodeArrived; delete document.body.dataset.koodeLogin; }
     if (m.type === 'ended' && !S.exiting) { S.exiting = true; ended(false); }
   });
   // A service-worker restart drops the port; reconnect so replies keep reaching this panel.
@@ -459,7 +566,8 @@ async function loadProgress() {
   const labels = [];
   if (h && h.mock) labels.push('MOCK planner (not AI)');
   if (h && h.speech === 'mock') labels.push('MOCK speech (not Sarvam)');
-  if (labels.length) { $('mock').textContent = labels.join(' · '); $('mock').classList.remove('hidden'); }
+  if (labels.length) { $('mock').textContent = '⚠ ' + labels.join(' · '); $('mock').classList.remove('hidden'); }
+  $('diaginfo').textContent = h ? `planner: ${h.provider || '?'} / ${h.model || '?'} · speech: ${h.speech || 'off'} · backend: ${h.ok ? 'running' : 'not reachable'}` : 'backend: not reachable';
   document.body.dataset.koodeSpeech = (h && h.speech) || '';
   document.body.dataset.koodeReady = 'true';
 })();

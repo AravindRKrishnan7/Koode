@@ -25,6 +25,8 @@
     if (msg.type === 'koode:start') { K.controller.start(msg.goal, { voice: msg.voice }); reply({ ok: true }); }
     if (msg.type === 'koode:stop') { K.controller.stop(msg.quiet, msg.quiet); reply({ ok: true }); }
     if (msg.type === 'koode:exit') { K.controller.exit({ fromPanel: true }); reply({ ok: true }); }
+    if (msg.type === 'koode:repeat') { K.controller.repeat(); reply({ ok: true }); }
+    if (msg.type === 'koode:retry') { K.controller.retry(); reply({ ok: true }); }
     if (msg.type === 'koode:hasUnsavedInput') reply({ unsaved: K.controller.hasUnsavedInput() });
   });
 

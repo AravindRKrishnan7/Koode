@@ -18,7 +18,7 @@
   const mirror = { state: 'idle' };
   const setState0 = panel.setState, setInstruction0 = panel.setInstruction;
   const here = () => (K.sites && K.sites.forUrl(location.href)) || null;
-  const progress = (extra) => send({ type: 'koode:progress', progress: { ...mirror, goal: S.active ? S.goal : '', step: S.step, active: S.active, site: here()?.name, siteId: here()?.id, ...extra } }).catch(() => {});
+  const progress = (extra) => send({ type: 'koode:progress', progress: { ...mirror, goal: S.active ? S.goal : '', step: S.step, active: S.active, target: S.target ? S.target.info.label : undefined, site: here()?.name, siteId: here()?.id, ...extra } }).catch(() => {});
   panel.setState = (st) => { setState0(st); mirror.state = st; progress(); };
   panel.setInstruction = (i = {}) => { setInstruction0(i); mirror.ml = i.ml || ''; mirror.en = i.en || ''; progress(); };
 
@@ -789,5 +789,15 @@
     say(S.lastPlan.instruction_ml);
   }
 
-  K.controller = { start, route, exit, stop, resume, repeat, micDown, micUp, confirmVoice, retryVoice, hasUnsavedInput, state: S };
+  // Retry from the side panel: look at the page again for the same goal (fresh snapshot, new plan).
+  function retry() {
+    if (!S.goal) return;
+    if (S.active) { S.failed = false; S.invalidRetries = 0; S.rateRetries = 0; return plan({ type: 'user_retry' }); }
+    const { goal, voice: v, service, search } = S;
+    start(goal, { voice: v });
+    if (service) S.service = service;
+    if (search) S.search = search;
+  }
+
+  K.controller = { start, route, exit, stop, resume, repeat, retry, micDown, micUp, confirmVoice, retryVoice, hasUnsavedInput, state: S };
 })();

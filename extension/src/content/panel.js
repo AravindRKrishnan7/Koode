@@ -15,59 +15,61 @@
   const CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; }
-    .wrap { position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: "Noto Sans Malayalam","Noto Sans",system-ui,-apple-system,sans-serif; color: #1f2340; }
+    .wrap { position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: "Noto Sans Malayalam","Nirmala UI","Malayalam Sangam MN","Noto Sans",system-ui,-apple-system,sans-serif; color: #2a1c10; }
     .wrap.left { right: auto; left: 20px; }
     .wrap.top { bottom: auto; top: 20px; }
     .launcher { width: 58px; height: 58px; border-radius: 50%; border: none; cursor: pointer; color: #fff; font: 700 20px inherit;
-      background: radial-gradient(circle at 30% 30%, #ffa45c, #ff6a00); box-shadow: 0 8px 22px rgba(255,106,0,.45); }
-    .card { width: 340px; background: #fffdf9; border-radius: 18px; box-shadow: 0 16px 40px rgba(31,35,64,.28); overflow: hidden; border: 1px solid #f1e3d3; }
+      background: radial-gradient(circle at 30% 30%, #f59a3c, #e8650f); box-shadow: 0 8px 22px rgba(255,106,0,.45); }
+    .card { width: 340px; background: #fffcf7; border-radius: 18px; box-shadow: 0 16px 40px rgba(90,50,10,.22); overflow: hidden; border: 1px solid #f1e3d3; }
     .hidden { display: none !important; }
-    header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: linear-gradient(135deg,#1f2340,#38407a); color: #fff; }
+    header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: linear-gradient(135deg,#e8650f,#f59a3c); color: #fff; }
     header .name { font-weight: 800; font-size: 15px; }
     header .ml { opacity: .8; font-size: 13px; }
     header .pill { margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.18); }
     header .min { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0 2px; }
     .body { padding: 12px 14px 14px; }
     .instr-ml { font-size: 16px; line-height: 1.5; font-weight: 600; min-height: 24px; }
-    .instr-en { font-size: 13px; color: #59607f; margin-top: 4px; }
+    .instr-en { font-size: 13px; color: #7a6450; margin-top: 4px; }
     .explain { font-size: 12.5px; color: #7a4b16; background: #fff1e0; border-radius: 10px; padding: 6px 9px; margin-top: 8px; }
-    .meta { display: flex; justify-content: space-between; font-size: 11px; color: #8a8fa8; margin-top: 10px; }
+    .meta { display: flex; justify-content: space-between; font-size: 11px; color: #9a8571; margin-top: 10px; }
     .badge.mock { color: #b42318; font-weight: 700; }
     form { display: flex; gap: 6px; margin-top: 12px; }
-    input { flex: 1; min-width: 0; border: 1.5px solid #e2d6c8; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; outline: none; }
-    input:focus { border-color: #ff7a1a; }
-    button.mic { border: 1.5px solid #e2d6c8; border-radius: 10px; width: 40px; background: #fff; color: #1f2340; cursor: pointer; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; }
+    input { flex: 1; min-width: 0; border: 1.5px solid #f0dcc2; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; outline: none; }
+    input:focus { border-color: #e8650f; }
+    button.mic { border: 1.5px solid #f0dcc2; border-radius: 10px; width: 40px; background: #fff; color: #2a1c10; cursor: pointer; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; }
     button.mic.on { background: #d92d20; border-color: #d92d20; color: #fff; box-shadow: 0 0 0 4px rgba(217,45,32,.25); animation: ring 1s ease-in-out infinite; }
     @keyframes ring { 50% { box-shadow: 0 0 0 8px rgba(217,45,32,.12); } }
-    button.go { border: none; border-radius: 10px; padding: 0 14px; font: 700 14px inherit; color: #fff; background: #ff6a00; cursor: pointer; }
+    button.go { border: none; border-radius: 10px; padding: 0 14px; font: 700 14px inherit; color: #fff; background: #e8650f; cursor: pointer; }
     .row { display: flex; gap: 6px; margin-top: 8px; }
-    .row button { flex: 1; border: 1px solid #e2d6c8; background: #fff; border-radius: 9px; padding: 6px; font: 600 12px inherit; cursor: pointer; color: #1f2340; }
+    .row button { flex: 1; border: 1px solid #f0dcc2; background: #fff; border-radius: 9px; padding: 6px; font: 600 12px inherit; cursor: pointer; color: #2a1c10; }
     .card[data-s=listening] .pill { background: #d92d20; }
-    .card[data-s=transcribing] .pill, .card[data-s=finding] .pill, .card[data-s=confirm] .pill { background: #3b5bdb; }
-    .card[data-s=waiting] .pill { background: #ff6a00; }
-    .card[data-s=verified] .pill, .card[data-s=done] .pill { background: #12b76a; }
+    .card[data-s=transcribing] .pill, .card[data-s=finding] .pill, .card[data-s=confirm] .pill { background: #b84a06; }
+    .card[data-s=waiting] .pill { background: #e8650f; }
+    .card[data-s=verified] .pill, .card[data-s=done] .pill { background: #2f8a57; }
     .card[data-s=error] .pill, .card[data-s=recovering] .pill { background: #f79009; }
-    .card[data-s=done] header { background: linear-gradient(135deg,#067647,#12b76a); }
+    .card[data-s=done] header { background: linear-gradient(135deg,#1f6f45,#2f8a57); }
     .card[data-s=finding] .instr-ml::after, .card[data-s=transcribing] .instr-ml::after { content: ' …'; animation: blink 1s steps(2) infinite; }
     @keyframes blink { 50% { opacity: .2; } }
     .speak { display: none; font-size: 15px; animation: blink 0.8s ease-in-out infinite; }
     .card.speaking .speak { display: inline; }
     .meter { height: 6px; border-radius: 3px; background: #f1e3d3; margin-top: 8px; overflow: hidden; display: none; }
     .card[data-s=listening] .meter { display: block; }
-    .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg,#12b76a,#f79009,#d92d20); transition: width .08s; }
+    .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg,#2f8a57,#f79009,#d92d20); transition: width .08s; }
+    .notice button.offer { display: block; width: 100%; margin-top: 6px; border: 1px solid #f0dcc2; background: #fffcf7; color: #2a1c10; border-radius: 10px; padding: 8px 10px; font: 700 13px inherit; cursor: pointer; text-align: left; }
+    .notice button.offer[data-id="svc-yes"], .notice button.offer[data-id="opt-official"] { background: #e8650f; border-color: #e8650f; color: #fff; }
     .notice { font-size: 12px; color: #7a4b16; background: #fef0c7; border-radius: 8px; padding: 6px 9px; margin-top: 8px; }
-    .confirm { margin-top: 10px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 9px 10px; }
-    .confirm .heard { font-size: 16px; font-weight: 700; color: #1f2340; margin: 2px 0 4px; }
-    .confirm .hint { font-size: 11.5px; color: #59607f; }
+    .confirm { margin-top: 10px; background: #fbefdf; border: 1px solid #f0dcc2; border-radius: 12px; padding: 9px 10px; }
+    .confirm .heard { font-size: 16px; font-weight: 700; color: #2a1c10; margin: 2px 0 4px; }
+    .confirm .hint { font-size: 11.5px; color: #7a6450; }
     .confirm .btns { display: flex; gap: 6px; margin-top: 8px; }
-    .confirm button { flex: 1; border-radius: 9px; padding: 8px 6px; font: 700 13px inherit; cursor: pointer; border: 1px solid #c7d2fe; background: #fff; color: #1f2340; }
-    .confirm button.yes { background: #12b76a; border-color: #12b76a; color: #fff; }
-    .celebrate { display: none; text-align: center; font-size: 40px; line-height: 1; margin-bottom: 6px; color: #12b76a; }
+    .confirm button { flex: 1; border-radius: 9px; padding: 8px 6px; font: 700 13px inherit; cursor: pointer; border: 1px solid #f0dcc2; background: #fff; color: #2a1c10; }
+    .confirm button.yes { background: #2f8a57; border-color: #2f8a57; color: #fff; }
+    .celebrate { display: none; text-align: center; font-size: 40px; line-height: 1; margin-bottom: 6px; color: #2f8a57; }
     .card[data-s=done] .celebrate { display: block; animation: pop .5s cubic-bezier(.2,1.6,.4,1); }
     @keyframes pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
     button.mic.unavail { opacity: .45; }
-    button.mic:focus-visible, .confirm button:focus-visible { outline: 3px solid #ffa45c; outline-offset: 1px; }
-    details { margin-top: 10px; font-size: 11px; color: #59607f; }
+    button.mic:focus-visible, .confirm button:focus-visible { outline: 3px solid #f59a3c; outline-offset: 1px; }
+    details { margin-top: 10px; font-size: 11px; color: #7a6450; }
     details ol { max-height: 140px; overflow: auto; padding-left: 18px; margin: 6px 0 0; }
   `;
 
