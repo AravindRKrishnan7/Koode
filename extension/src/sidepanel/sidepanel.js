@@ -43,7 +43,7 @@ async function handle(text) {
   log('request (' + goal.length + ' chars)');
   const m = Sites.match(goal);
   const tab = await refreshWhere();
-  if (m) {
+  if (m && (m.explicitOpen || !tab || !tab.site)) {
     // Navigation only on an explicit request naming a supported site; the rest of the request continues there.
     const rest = m.rest.replace(/^(and|then|ഉം|എന്നിട്ട്)\s+/i, '').trim();
     say({ ml: `${m.site.name} തുറക്കുന്നു…`, en: `Opening ${m.site.name}…` });
