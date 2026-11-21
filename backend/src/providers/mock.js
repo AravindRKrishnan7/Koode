@@ -8,7 +8,7 @@ const SYNONYMS = {
 };
 
 function isDone(req) {
-  return req.snapshot.context.some((c) => /success|submitted|is on|applied|enabled/i.test(c.text));
+  return req.snapshot.context.some((c) => /success|submitted|recorded|is on|applied|enabled/i.test(c.text));
 }
 
 function textFieldPending(c) {

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workshop registration (Google Forms structure)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Mirrors the DOM structure of a live Google Form (role=list/listitem/heading/radiogroup,
+     20px div[role=radio] circles inside <label for> with the caption beside them). Fictional content. */
+  .gf { max-width: 640px; margin: 24px auto; font-family: Roboto, Arial, sans-serif; }
+  .card { background: #fff; border: 1px solid #dadce0; border-radius: 8px; padding: 24px; margin-bottom: 12px; }
+  .q [role=heading] { font-size: 16px; margin-bottom: 16px; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 8px 0; cursor: pointer; }
+  [role=radio] { width: 20px; height: 20px; border: 2px solid #5f6368; border-radius: 50%; box-sizing: border-box; flex: none; }
+  [role=radio][aria-checked=true] { border-color: #673ab7; box-shadow: inset 0 0 0 4px #fff; background: #673ab7; }
+  .other input { border: none; border-bottom: 1px solid #dadce0; margin-left: 8px; }
+  .btn { background: #673ab7; color: #fff; border-radius: 4px; padding: 10px 24px; display: inline-block; cursor: pointer; }
+  .req { color: #d93025; }
+  #done { display: none; }
+</style>
+</head>
+<body>
+<div class="banner">Demo environment — fictional form. Nothing here is real.</div>
+<div class="gf">
+  <form id="f" onsubmit="return false">
+    <div class="card"><h1 id="title">Workshop registration</h1><div>Fictional practice form.</div></div>
+    <div role="list">
+      <div role="listitem" class="card q">
+        <div role="heading" aria-level="3" id="q1">Which session will you attend? <span class="req">*</span></div>
+        <div role="radiogroup" aria-labelledby="q1 q1d" id="g1"><div id="q1d" hidden></div>
+          <label for="r1" class="opt"><div role="radio" id="r1" aria-label="Morning" data-value="Morning" aria-checked="false" tabindex="0"></div><span>Morning</span></label>
+          <label for="r2" class="opt"><div role="radio" id="r2" aria-label="Afternoon" data-value="Afternoon" aria-checked="false" tabindex="-1"></div><span>Afternoon</span></label>
+          <label for="r3" class="opt other"><div role="radio" id="r3" data-value="__other_option__" aria-checked="false" tabindex="-1"></div><span>Other:</span><input type="text" aria-label="Other response" disabled></label>
+        </div>
+      </div>
+      <div role="listitem" class="card q">
+        <div role="heading" aria-level="3" id="q2">How will you travel? <span class="req">*</span></div>
+        <div role="radiogroup" aria-labelledby="q2" id="g2">
+          <label for="r4" class="opt"><div role="radio" id="r4" aria-label="Bus" data-value="Bus" aria-checked="false" tabindex="0"></div><span>Bus</span></label>
+          <label for="r5" class="opt"><div role="radio" id="r5" aria-label="Train" data-value="Train" aria-checked="false" tabindex="-1"></div><span>Train</span></label>
+          <label for="r6" class="opt"><div role="radio" id="r6" aria-label="Morning" data-value="Morning" aria-checked="false" tabindex="-1"></div><span>Morning</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div role="button" class="btn" tabindex="0" id="submit">Submit</div></div>
+    <div class="card" id="done" role="status">Your response has been recorded.</div>
+  </form>
+</div>
+<script>
+  // Google Forms behaviour: clicking anywhere on the option row (circle or caption) selects it;
+  // arrow keys move the selection inside a group.
+  for (const g of document.querySelectorAll('[role=radiogroup]')) {
+    const radios = [...g.querySelectorAll('[role=radio]')];
+    const select = (r) => {
+      for (const o of radios) { o.setAttribute('aria-checked', String(o === r)); o.tabIndex = o === r ? 0 : -1; }
+      const other = g.querySelector('.other input'); if (other) other.disabled = r.id !== 'r3';
+      r.focus();
+    };
+    for (const lab of g.querySelectorAll('label')) lab.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') { e.preventDefault(); select(document.getElementById(lab.htmlFor)); } });
+    g.addEventListener('keydown', (e) => {
+      const i = radios.indexOf(document.activeElement); if (i < 0) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); select(radios[(i + 1) % radios.length]); }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); select(radios[(i - 1 + radios.length) % radios.length]); }
+      if (e.key === ' ') { e.preventDefault(); select(radios[i]); }
+    });
+  }
+  // Submit is guided but never automated by Koode; the fictional form only shows a confirmation.
+  document.getElementById('submit').addEventListener('click', () => {
+    const ok = [...document.querySelectorAll('[role=radiogroup]')].every((g) => g.querySelector('[aria-checked=true]'));
+    if (ok) document.getElementById('done').style.display = 'block';
+  });
+</script>
+</body>
+</html>

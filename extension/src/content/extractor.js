@@ -85,12 +85,30 @@
     if (isTextEntry(el) || tag === 'select') {
       return clean(el.getAttribute('placeholder') || el.title || humanize(el.name || el.id));
     }
+    const role = implicitRole(el);
+    // Custom radios/checkboxes are often bare circles next to their caption inside a <label> (e.g. "Other:").
+    const wrap = (role === 'radio' || role === 'checkbox') && el.closest('label');
     return (
       textWithoutControls(el) ||
+      (wrap ? textWithoutControls(wrap) : '') ||
       clean(el.title) ||
       clean(el.querySelector('img[alt]')?.alt) ||
       clean(el.querySelector('svg title')?.textContent)
     );
+  }
+
+  // aria-labelledby may list several ids ("i1 i4").
+  function labelledBy(node) {
+    const ids = node.getAttribute('aria-labelledby');
+    if (!ids) return '';
+    return clean(ids.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map((n) => safeText(n)).join(' ').replace(/\s*\*\s*$/, ''), 60);
+  }
+
+  // Question text for a control in a form list item (e.g. Google Forms: [role=listitem] > [role=heading]).
+  function questionFor(el) {
+    const item = el.closest('[role=listitem]');
+    const h = item && item.querySelector('[role=heading],h1,h2,h3,h4');
+    return h && !h.contains(el) ? clean(safeText(h).replace(/\s*\*\s*$/, ''), 60) : '';
   }
 
   function sectionFor(el) {
@@ -101,10 +119,14 @@
     }
     const group = el.closest('[role=radiogroup],[role=group]');
     if (group) {
-      const gl = group.getAttribute('aria-label') ||
-        (group.getAttribute('aria-labelledby') && document.getElementById(group.getAttribute('aria-labelledby'))?.textContent);
-      if (gl) return clean(gl, 60);
+      const gl = clean(group.getAttribute('aria-label') || '', 60) || labelledBy(group);
+      // A grid row is labelled by its row name; prefix the question so rows of different questions differ.
+      const q = questionFor(el);
+      if (gl) return q && !gl.includes(q) && group.getAttribute('aria-label') ? clean(gl + ' — ' + q, 60) : gl;
+      if (q) return q;
     }
+    const q = questionFor(el);
+    if (q) return q;
     const region = el.closest('[role=dialog],dialog,[role=tabpanel],nav,header,footer,aside,form,section');
     if (!region) return '';
     const rl = region.getAttribute('aria-label') ||
@@ -127,6 +149,8 @@
     const tag = el.tagName.toLowerCase();
     if (isDisabled(el)) s.disabled = true;
     if (el.required || el.getAttribute('aria-required') === 'true') s.required = true;
+    // Custom radio groups mark "required" on the group or with a trailing * on the question (Google Forms).
+    else if ((role === 'radio' || role === 'checkbox') && (el.closest('[role=radiogroup][aria-required=true],[role=group][aria-required=true]') || /\*\s*$/.test(safeText(el.closest('[role=listitem]')?.querySelector('[role=heading]') || document.createElement('i'))))) s.required = true;
     if (role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'menuitemradio' || role === 'menuitemcheckbox') {
       s.checked = typeof el.checked === 'boolean' && tag === 'input' ? el.checked : el.getAttribute('aria-checked') === 'true';
     }
