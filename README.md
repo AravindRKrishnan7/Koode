@@ -26,6 +26,10 @@ docs/        ARCHITECTURE.md, CONTRACTS.md
 
 ## Run
 
+**Mac / judging:** use `scripts/start-judging.sh` (real Groq, mock impossible) or `scripts/start-rehearsal.sh` (labelled simulation, no Groq quota). Full steps, key storage in the Keychain, and the judging checklist: [`docs/DEMO.md`](docs/DEMO.md).
+
+Manual start:
+
 ```bash
 cd backend
 GROQ_API_KEY=...  npm start           # Groq openai/gpt-oss-20b (default real planner)

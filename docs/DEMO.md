@@ -2,30 +2,46 @@
 
 Two procedures: a **real-microphone manual test** (do this once on the demo laptop before judging) and the **90-second judging script**.
 
-## Setup (once, ~3 min)
+## Start Koode on your Mac
+
+### One-time setup (~5 min)
 
 ```bash
-cd backend
-GROQ_API_KEY=... SARVAM_API_KEY=... KOODE_REQUIRE_LLM=1 npm start
-curl -s localhost:8787/health   # expect "provider":"groq","mock":false,"voice":true
+brew install node@20 git                 # Node 20+ (check: node -v)
+git clone https://github.com/AravindRKrishnan7/Koode.git ~/Koode
+cd ~/Koode && git checkout koode-judging-final
 ```
 
-1. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → `extension/`. (Reload the card after any code change.)
-2. Use a wired/USB or laptop mic; close Zoom/Meet/other apps that hold the mic.
-3. Open `http://localhost:8787/demo/settings.html?layout=b`. Click the orange **കൂ** bubble.
-4. First press of 🎤: Chrome asks for microphone permission for `localhost:8787` → **Allow**.
-5. Keys stay in the backend shell only. Never paste them into the extension, the page, or a commit.
-
-## Mic rehearsal without spending Groq quota
-
-Rehearse the voice path as often as you like with the mock planner. Only Sarvam is called; the panel says **MOCK test harness (not AI)**, so never use this mode in front of judges.
+Store the keys in the macOS Keychain (typed at a hidden prompt; never in a file, shell history, or the repo):
 
 ```bash
-cd backend
-SARVAM_API_KEY=... KOODE_PROVIDER=mock npm start      # no GROQ_API_KEY needed
+security add-generic-password -a "$USER" -s koode-groq   -w     # paste GROQ_API_KEY, Enter
+security add-generic-password -a "$USER" -s koode-sarvam -w     # paste SARVAM_API_KEY, Enter
+# replace a key later: add -U to the same command
 ```
 
-Steps 1–3 and 7–10 below behave exactly as with Groq (recording, transcript, confirm/correct, spoken read-back, fallbacks). Arrow targets come from the mock, so judge only the voice part this way.
+Load the extension in Chrome:
+
+1. Open `chrome://extensions`, switch on **Developer mode** (top right).
+2. **Load unpacked** → choose `~/Koode/extension`. "Koode — കൂടെ" appears; pin it from the puzzle-piece menu.
+3. After any `git checkout`, press the ↻ reload icon on the Koode card.
+
+### Two modes (only one at a time, both on port 8787)
+
+| | Rehearsal (simulation) | Judging (real AI) |
+|---|---|---|
+| Command | `~/Koode/scripts/start-rehearsal.sh` | `~/Koode/scripts/start-judging.sh` |
+| Planner | Mock, scripted targets, **not AI** | Groq `openai/gpt-oss-20b` |
+| Voice | Real Sarvam (if the key is stored), otherwise typing only | Real Sarvam (required) |
+| Groq quota used | None | ≈ 850 tokens per step |
+| Panel badge | Red **MOCK test harness (not AI)** | **model: openai/gpt-oss-20b** |
+| Safety check | Prints a SIMULATION banner | Refuses to start without both keys; stops unless `/health` is `groq`, `mock:false`, `voice:true` |
+
+Switch modes: press **Ctrl-C** in the terminal running Koode, start the other script, then reload the demo tab. A second mode can't start while one is running (port check).
+
+Open `http://localhost:8787/demo/settings.html?layout=b` and click the orange **കൂ** bubble. First press of the mic: Chrome asks for microphone access for `localhost:8787` → **Allow**.
+
+Keys never leave the backend process: the extension only talks to `localhost:8787`, and the backend refuses API calls from web pages.
 
 ## Groq quota budget (free tier)
 
@@ -39,12 +55,14 @@ On judging day: no E2E runs, no repeated rehearsals on Groq. Rehearse in mock mo
 
 ## Known-good versions
 
-- `koode-groq-verified`: last commit fully verified on real Groq + Sarvam in Chrome.
-- `koode-judging-candidate`: feature-frozen judging build.
+- `koode-judging-final`: the judging build (features frozen). Real-Groq voice run on this code: speech → confirm → correct arrow → verified click → correct next arrow.
+- `koode-groq-verified`: earlier commit with the full real-Groq suite passed (voice 3/3, 51/51 steps); fallback if the judging build misbehaves.
 
-`git checkout koode-judging-candidate`, reload the extension card in `chrome://extensions`, restart the backend.
+Switch: `git checkout <tag>`, reload the Koode card in `chrome://extensions`, restart the script.
 
-## Real-microphone manual test (~5 min)
+## Real-microphone manual test (~5 min, rehearsal mode)
+
+Run this with `start-rehearsal.sh`; it uses no Groq quota. Steps 1–3 and 7–11 test the real voice path; arrow targets come from the mock.
 
 Reload the page (`F5`) before each case; it resets the demo state.
 
@@ -75,7 +93,15 @@ Record what Koode heard for 3–5 different phrasings (e.g. *"ഡാർക്ക
 
 ## 90-second judging script
 
-Pre-flight (before the judges arrive): backend running with `KOODE_REQUIRE_LLM=1`, `/health` shows `groq`, `mock:false`, `voice:true`; panel badge reads `model: openai/gpt-oss-20b` (not MOCK); mic permission already allowed; tab on `settings.html?layout=b`, reloaded; **wait 60 s since the last run** so the Groq per-minute budget is full. Keep a second tab on `form.html` as a backup.
+Pre-flight checklist (before the judges arrive):
+
+1. `git describe --tags` shows `koode-judging-final`; Koode card reloaded in `chrome://extensions`.
+2. No Groq use in the last hour (no tests, no Groq rehearsals); the daily quota refills slowly.
+3. `scripts/start-judging.sh` prints `JUDGING MODE OK … "provider":"groq" … "mock":false … "voice":true`.
+4. Tab on `http://localhost:8787/demo/settings.html?layout=b`, freshly reloaded; panel badge reads `model: openai/gpt-oss-20b` (not red MOCK).
+5. Mic permission already allowed for `localhost:8787`; mic level bar moves when you speak (check by holding the mic, then press **🎤 വീണ്ടും പറയാം** to discard; that uses Sarvam only, no Groq).
+6. Laptop volume up so the spoken Malayalam replies are audible; notifications off.
+7. Backup: a second tab on `form.html`; if voice misbehaves, type the same sentence and press **Guide**.
 
 | Time | Say (presenter) | Do |
 |---|---|---|
