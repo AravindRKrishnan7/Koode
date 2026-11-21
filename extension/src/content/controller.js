@@ -183,7 +183,9 @@
 
   async function micUp() {
     if (!voice.isRecording()) return;
+    const my = S.token; // Stop (or a new goal) while transcribing cancels this voice request
     const clip = await voice.stop();
+    if (my !== S.token) return;
     if (!clip) {
       panel.setState('idle');
       panel.setInstruction({ ml: 'ബട്ടൺ അമർത്തിപ്പിടിച്ചുകൊണ്ട് സംസാരിക്കൂ.', en: 'Hold the mic button while you speak.' });
@@ -194,6 +196,7 @@
     let resp;
     try { resp = await voice.transcribe(clip); } catch (e) { resp = { error: String(e && e.message || e) }; }
     const ms = Math.round(performance.now() - t0);
+    if (my !== S.token) return;
     if (!resp || resp.error || !resp.transcript) {
       panel.setState('idle');
       panel.setVoiceInfo({ error: 'stt: ' + (resp && resp.error || 'empty transcript'), sttMs: ms });
