@@ -266,7 +266,8 @@ async function main() {
     if (!only || only === 'settings-b') scenarios.push(['settings-b', r]);
     if (wantVoice && only !== 'mic-denied' && only !== 'voice-fail') scenarios.push(['voice', r]);
   }
-  if (wantVoice && (!only || only === 'mic-denied')) scenarios.push(['mic-denied', null]);
+  // Needs Chrome launched with --deny-permission-prompts, so it only runs alone.
+  if (only === 'mic-denied') scenarios.push(['mic-denied', null]);
   // Only meaningful against a backend started with an invalid SARVAM_API_KEY.
   if (only === 'voice-fail') scenarios.push(['voice-fail', null]);
 
