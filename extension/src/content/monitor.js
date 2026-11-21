@@ -108,16 +108,18 @@
       if (isOnTarget(e.target, target)) {
         if (kind !== 'click' || st.busy) return; // fill/check/select verify via their own events
         st.busy = true;
-        st.clickedTarget = true;
+        st.lastClickOnTarget = true;
         const before = st.beforeClick || K.extractor.stateSignature();
         const diff = await waitForChange(before, C.CLICK_EVIDENCE_TIMEOUT_MS);
         st.busy = false;
         if (!isCurrent()) return;
-        if (diff) verify({ evidence: 'dom_change', diff });
+        const alertLine = diff && diff.added.find((l) => l.startsWith('ctx|alert|'));
+        if (alertLine) verify({ evidence: 'dom_change', diff, page_alert: alertLine.slice('ctx|alert|'.length) });
+        else if (diff) verify({ evidence: 'dom_change', diff });
         else cb.noChange();
         return;
       }
-      st.clickedOther = true;
+      st.lastClickOnTarget = false;
       handleWrong(e.target, 'click');
     });
 
@@ -156,7 +158,7 @@
       st.cleanup.push(() => mo.disconnect());
     }
 
-    const onHide = () => { if (isCurrent()) cb.navigating({ on_target: !!st.clickedTarget && !st.clickedOther }); };
+    const onHide = () => { if (isCurrent()) cb.navigating({ on_target: !!st.lastClickOnTarget }); };
     window.addEventListener('pagehide', onHide);
     st.cleanup.push(() => window.removeEventListener('pagehide', onHide));
     return kind;

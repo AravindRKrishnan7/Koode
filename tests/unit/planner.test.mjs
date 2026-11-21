@@ -77,3 +77,18 @@ test('extractJson handles fenced and think-tagged output', () => {
   assert.deepEqual(extractJson('Sure:\n```json\n{"a":2}\n```'), { a: 2 });
   assert.equal(extractJson('nothing'), null);
 });
+
+test('mock guides back to a filled but invalid required field', async () => {
+  const b = body();
+  b.goal = 'fill this form';
+  b.snapshot.candidates[0].state = { filled: true, valid: false, required: true };
+  const { result } = await planStep(b, { provider: 'mock', model: 'mock-test-harness' });
+  assert.equal(result.target_id, 's3_1');
+});
+
+test('page_alert text survives sanitising, unknown last_event fields do not', () => {
+  const b = body();
+  b.last_event = { type: 'page_alert', alert: 'Please complete: Mobile', value: '123' };
+  const req = sanitizePlanRequest(b);
+  assert.deepEqual(req.last_event, { type: 'page_alert', alert: 'Please complete: Mobile' });
+});

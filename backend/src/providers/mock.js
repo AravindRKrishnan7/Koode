@@ -12,7 +12,7 @@ function isDone(req) {
 }
 
 function textFieldPending(c) {
-  return c.role === 'textbox' && c.state && !c.state.filled && c.state.required;
+  return c.role === 'textbox' && c.state && c.state.required && (!c.state.filled || c.state.valid === false);
 }
 
 export function mockPlan(req) {

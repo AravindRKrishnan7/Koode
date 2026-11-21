@@ -56,7 +56,7 @@ export function sanitizePlanRequest(body) {
     outcome: str(h.outcome, 24), evidence: str(h.evidence, 24), clicked_label: str(h.clicked_label), page_changed: bool(h.page_changed)
   }));
   const ev = body.last_event && typeof body.last_event === 'object' ? body.last_event : null;
-  const last_event = ev ? prune({ type: str(ev.type, 24), label: str(ev.label), clicked_label: str(ev.clicked_label), reason: str(ev.reason, 40), target_id: str(ev.target_id, 24), evidence: str(ev.evidence, 24), page_changed: bool(ev.page_changed) }) : null;
+  const last_event = ev ? prune({ type: str(ev.type, 24), label: str(ev.label), clicked_label: str(ev.clicked_label), reason: str(ev.reason, 40), target_id: str(ev.target_id, 24), evidence: str(ev.evidence, 24), page_changed: bool(ev.page_changed), alert: str(ev.alert, 120) }) : null;
   return {
     goal,
     snapshot: {

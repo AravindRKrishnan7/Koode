@@ -12,7 +12,6 @@
 
   function persist(extra = {}) {
     const task = S.active ? { goal: S.goal, history: S.history.slice(-20), step: S.step, url: location.href, ...extra } : null;
-    try { task ? sessionStorage.setItem('koode:task', JSON.stringify(task)) : sessionStorage.removeItem('koode:task'); } catch (_) {}
     send({ type: task ? 'koode:saveTask' : 'koode:clearTask', task }).catch(() => {});
   }
 
@@ -100,6 +99,15 @@
   }
 
   function onVerified(r, kind, ev) {
+    if (ev.page_alert) {
+      // The page reacted with an alert (e.g. form validation): not a completed step.
+      record({ target_label: r.info.label, role: r.info.role, action: kind, outcome: 'page_alert', evidence: 'alert_shown' });
+      panel.setState('recovering');
+      panel.setInstruction({ ml: 'പേജ് ഒരു സന്ദേശം കാണിച്ചു. എന്താണ് തിരുത്തേണ്ടതെന്ന് നോക്കാം…', en: 'The page showed a message. Let me check what needs fixing…' });
+      overlay.clear();
+      persist();
+      return plan({ type: 'page_alert', label: r.info.label, alert: ev.page_alert });
+    }
     record({ target_label: r.info.label, role: r.info.role, action: kind, outcome: 'verified', evidence: ev.evidence });
     panel.setState('verified');
     panel.setInstruction({ ml: 'ശരി! അടുത്ത ഘട്ടം നോക്കുന്നു…', en: 'Correct — checking the next step…' });
@@ -136,7 +144,7 @@
     stop(true);
     Object.assign(S, { goal, history: [], step: 0, active: true, invalidRetries: 0 });
     panel.setGoal(goal);
-    panel.log('goal: ' + goal);
+    panel.log(`goal set (${goal.length} chars)`);
     persist();
     plan({ type: 'goal_set' });
   }

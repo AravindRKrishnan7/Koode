@@ -125,7 +125,7 @@
   function stateFor(el, role) {
     const s = {};
     const tag = el.tagName.toLowerCase();
-    if (el.disabled || el.getAttribute('aria-disabled') === 'true') s.disabled = true;
+    if (isDisabled(el)) s.disabled = true;
     if (el.required || el.getAttribute('aria-required') === 'true') s.required = true;
     if (role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'menuitemradio' || role === 'menuitemcheckbox') {
       s.checked = typeof el.checked === 'boolean' && tag === 'input' ? el.checked : el.getAttribute('aria-checked') === 'true';
@@ -162,15 +162,36 @@
     return null;
   }
 
+  // Native :disabled also covers controls inside a disabled <fieldset>.
+  function isDisabled(el) {
+    return (typeof el.matches === 'function' && el.matches(':disabled')) || el.getAttribute('aria-disabled') === 'true';
+  }
+
+  // Visible text of a container, skipping private subtrees and form-field contents.
+  function safeText(root) {
+    let out = '';
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === Node.TEXT_NODE) out += c.nodeValue + ' ';
+        else if (c.nodeType === Node.ELEMENT_NODE) {
+          if (c.matches(C.PRIVATE_SELECTOR) || c.matches('input,textarea,select,[contenteditable=""],[contenteditable=true],script,style') || c.getAttribute('aria-hidden') === 'true') continue;
+          walk(c);
+        }
+      }
+    };
+    walk(root);
+    return out;
+  }
+
   function collectContext() {
     const out = [];
     const nodes = document.querySelectorAll('h1,h2,h3,[role=alert],[role=status],[aria-live],legend,[role=dialog] [id$=title]');
     for (const n of nodes) {
       if (out.length >= C.MAX_CONTEXT) break;
       if (isKoodeUi(n) || n.closest(C.PRIVATE_SELECTOR) || !isRendered(n)) continue;
-      const text = clean(n.textContent, C.MAX_CONTEXT_TEXT);
+      const text = clean(safeText(n), C.MAX_CONTEXT_TEXT);
       if (!text) continue;
-      const kind = n.matches('[role=alert],[role=status],[aria-live]') ? 'status' : n.tagName.toLowerCase();
+      const kind = n.matches('[role=alert],[aria-live=assertive]') ? 'alert' : n.matches('[role=status],[aria-live]') ? 'status' : n.tagName.toLowerCase();
       if (!out.some((o) => o.text === text)) out.push({ kind, text });
     }
     return out;
@@ -254,7 +275,8 @@
       const d = describe(el, anchor);
       parts.push(d.role + '|' + d.label + '|' + JSON.stringify(d.state));
     }
-    for (const c of collectContext()) parts.push('ctx|' + c.text);
+    for (const det of document.querySelectorAll('details')) if (!isKoodeUi(det)) parts.push('details|' + det.open);
+    for (const c of collectContext()) parts.push('ctx|' + c.kind + '|' + c.text);
     return parts.join('\n');
   }
 
@@ -273,7 +295,7 @@
     if (!item.el.isConnected) return { ok: false, reason: 'detached' };
     const anchor = anchorFor(item.el);
     if (!anchor) return { ok: false, reason: 'not_visible' };
-    if (item.el.disabled || item.el.getAttribute('aria-disabled') === 'true') return { ok: false, reason: 'disabled' };
+    if (isDisabled(item.el)) return { ok: false, reason: 'disabled' };
     return { ok: true, id, el: item.el, anchor, info: describe(item.el, anchor) };
   }
 

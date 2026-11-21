@@ -10,7 +10,6 @@
   (async () => {
     let task = null;
     try { task = (await chrome.runtime.sendMessage({ type: 'koode:loadTask' })) || null; } catch (_) {}
-    if (!task) { try { task = JSON.parse(sessionStorage.getItem('koode:task') || 'null'); } catch (_) {} }
     if (task && task.goal) K.controller.resume(task);
   })();
 })();
