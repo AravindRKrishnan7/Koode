@@ -117,17 +117,25 @@
   const SEARCH_EN = /(?<![a-z])(?:search(?:ing)?(?: for| about)?|find(?: me)?|look(?:ing)? for|look up)(?![a-z])/g;
   const SEARCH_ML = new RegExp('(?<![' + ML + '])(?:തിരയ|തിരഞ്ഞ|സെർച്ച്|സേർച്ച്|കണ്ടെത്ത)[' + ML + ']*(?:\\s+ചെയ്[' + ML + ']*)?', 'g');
   const VIDEO = new RegExp('(?<![a-z])videos?(?![a-z])|(?<![' + ML + '])(?:വീഡിയോ|വിഡിയോ|വീഡിയൊ)[' + ML + ']*', 'g');
-  const WATCH = new RegExp('(?<![a-z])(?:i want to (?:watch|see|listen to)|i want|want to (?:watch|see|listen to)|show me|watch|see|listen to|listen|play|some|me)(?![a-z])|(?<![' + ML + '])(?:കാണ|കാണി|കേൾക്ക|കേൾപ്പ|പ്ലേ|വേണ|തരൂ|എനിക്ക്|കുറച്ച്|ചില)[' + ML + ']*', 'g');
+  const WATCH = new RegExp('(?<![a-z])(?:i want to (?:watch|see|listen to)|i want|want to (?:watch|see|listen to)|show me|watch|see|listen to|listen|play|some|me|my|' +
+    // Manglish (Malayalam in Latin letters) fillers, and the site's own name
+    'kanikku|kanikkoo|kaanikku|kanikkamo|kananam|kaananam|kanan|kaanan|venam|veenam|vende|venamayirunnu|onnu|enikku|ente|ulla|patti|kurichu|il|youtube|you tube|yt)(?![a-z])|(?<![' + ML + '])(?:കാണ|കാണി|കേൾക്ക|കേൾപ്പ|പ്ലേ|വേണ|തരൂ|എനിക്ക്|എന്റെ|കുറച്ച്|ചില|യൂട്യൂബ|എന്നതിന)[' + ML + ']*', 'g');
   const WATCH_VERB = new RegExp('(?<![a-z])(?:watch|see|listen(?: to)?|play)(?![a-z])|(?<![' + ML + '])(?:കാണ|കേൾക്ക|പ്ലേ)[' + ML + ']*', 'g');
   // Postpositions that only link the topic to "video" ("…യെ കുറിച്ചുള്ള വീഡിയോ", "videos about …").
   const LINK = new RegExp('(?<![a-z])(?:about|on|of|for|related to)(?![a-z])|(?<![' + ML + '])(?:കുറിച്ച്|കുറിച്ചുള്ള|കുറിച്ചു|പറ്റി|പറ്റിയുള്ള|സംബന്ധിച്ച|സംബന്ധിച്ചുള്ള|ഉള്ള|ഉളള|ആയ)(?![' + ML + '])', 'g');
   // Player controls and actions on a video that is already open are goals for the page, not searches.
   const NOT_SEARCH = new RegExp('(?<![a-z])(?:stop|pause|resume|mute|unmute|volume|full ?screen|skip|like|dislike|subscribe|share|comment|download|upload|record|call|send|close|exit|speed|captions?|subtitles?|quality|settings|delete|remove)(?![a-z])' +
-    '|(?<![a-z])(?:this|that|these|current|my)(?![a-z])' +
-    '|(?<![' + ML + '])(?:ഈ|ആ|ഇത്|അത്|ഇതിന്റെ|അതിന്റെ|എന്റെ)(?![' + ML + '])' +
+    '|(?<![a-z])(?:this|that|these|current)(?![a-z])' +
+    '|(?<![' + ML + '])(?:ഈ|ആ|ഇത്|അത്|ഇതിന്റെ|അതിന്റെ)(?![' + ML + '])' +
     '|(?<![' + ML + '])(?:നിർത്ത|പോസ്|ശബ്ദം|ഫുൾ|സബ്സ്ക്രൈബ്|ലൈക്ക്|ഷെയർ|അയയ്ക്ക|അയക്ക|അയച്ച|കോൾ|ഡൗൺലോഡ്|അപ്‌ലോഡ്|റെക്കോർഡ്|ഡിലീറ്റ്)', '');
   // Learning requests without a clear search phrase go to the intent planner.
   const LEARN = new RegExp('(?<![a-z])(?:learn|learning|how to|how do i|teach me|tutorials?|classes?|recipe)(?![a-z])|(?<![' + ML + '])(?:പഠിക്ക|പഠിപ്പ|പഠനം|എങ്ങനെ|ട്യൂട്ടോറിയൽ|ക്ലാസ്|റെസിപ്പി|ഉണ്ടാക്കുന്ന)', '');
+
+  const GOV = new RegExp('(?<![a-z])(?:government|govt|official|sarkar|sarkkar)(?![a-z])|(?<![' + ML + '])(?:ഗവൺമെന്റ|ഗവണ്മെന്റ|ഗവർമെന്റ|ഗവൺമെൻറ|സർക്കാർ|ഔദ്യോഗിക)', 'u');
+  const SITE_WORD = new RegExp('(?<![a-z])(?:website|websites|web site|site|sites|portal)(?![a-z])|(?<![' + ML + '])(?:വെബ്സൈറ്റ|വെബ്‌സൈറ്റ|സൈറ്റ|പോർട്ടൽ)', 'u');
+
+  const SERVICE_WORD = new RegExp('(?<![a-z])(?:licen[cs]e|registration|rc book|certificate|aadhaa?r|ration card|passport|pension|voter id|land tax|vahan|sarathi|parivahan)(?![a-z])|' +
+    '(?<![' + ML + '])(?:ലൈസൻസ|രജിസ്ട്രേഷൻ|ആർസി|സർട്ടിഫിക്കറ്റ|ആധാർ|റേഷൻ|പാസ്പോർട്ട|പെൻഷൻ|വോട്ടർ|ഭൂനികുതി|വാഹൻ|സാരഥി|പരിവാഹൻ)', 'u');
 
   // t: normalised text. opts.searchVerbs: search verbs count. Returns { query, lang, fallback, lazyFallback } or null.
   function searchFrom(t, opts = {}) {
@@ -177,7 +185,13 @@
     const cm = Cat && Cat.match(t);
     if (cm && !(pick && (pick.verb || pick.attached) && pick.site.id !== 'practiceform')) {
       if (cm.entry.id === here) return { type: 'guide', goal: String(text).trim(), serviceId: cm.entry.id, subId: cm.service && cm.service.id };
-      return { type: 'service', entry: cm.entry, service: cm.service, want: Cat.wants(t), goal: String(text).trim() };
+      const want = Cat.wants(t);
+      // "…video" about a service: search the user's own topic (e.g. "driving test tips"), not just the portal name.
+      if (want === 'video') {
+        const own = searchFrom(t, { searchVerbs: true, watchVerbs: true });
+        if (own) return { type: 'youtube_search', search: own, goal: String(text).trim(), serviceId: cm.entry.id };
+      }
+      return { type: 'service', entry: cm.entry, service: cm.service, want, goal: String(text).trim() };
     }
     if (pick) {
       const cuts = [pick];
@@ -199,6 +213,11 @@
     // A learning request on a page that isn't about it ("തെങ്ങ് കയറാൻ പഠിക്കണം" on WhatsApp): the intent
     // planner decides; "how do I fill this form" (refers to the page) stays a goal for this page.
     if (LEARN.test(t) && !NOT_SEARCH.test(t)) return { type: 'intent', goal: String(text).trim() };
+    // "Is there a government website for this? take me there" on YouTube/WhatsApp/forms is not about this page.
+    const Cat2 = globalThis.KoodeCatalogue;
+    if (!(Cat2 && Cat2.byId(here)) && GOV.test(t) && SITE_WORD.test(t)) return { type: 'intent', goal: String(text).trim() };
+    // Service words (licence, RC, certificate…) on a page that isn't an official site, unless they refer to this page.
+    if (!(Cat2 && Cat2.byId(here)) && SERVICE_WORD.test(t) && !NOT_SEARCH.test(t)) return { type: 'intent', goal: String(text).trim() };
     return { type: 'guide', goal: String(text).trim() };
   }
 

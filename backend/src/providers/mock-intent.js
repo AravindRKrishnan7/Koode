@@ -17,7 +17,7 @@ export function nextQueuedIntent() {
 }
 
 const ML = 'ഀ-ൿ';
-const SERVICE = /licen[cs]e|ലൈസൻസ്|aadha?ar|ആധാർ|ration|റേഷൻ|passport|പാസ്പോർട്ട്|certificate|സർട്ടിഫിക്കറ്റ്|pension|പെൻഷൻ|voter|വോട്ടർ|pan card|പാൻ കാർഡ്|land tax|ഭൂനികുതി|കരം|electricity bill|കറന്റ് ബിൽ|വൈദ്യുതി ബിൽ|വില്ലേജ്|psc|പി\s?എസ്\s?സി/i;
+const SERVICE = /licen[cs]e|ലൈസൻസ്|aadha?ar|ആധാർ|ration|റേഷൻ|passport|പാസ്പോർട്ട്|certificate|സർട്ടിഫിക്കറ്റ്|pension|പെൻഷൻ|voter|വോട്ടർ|pan card|പാൻ കാർഡ്|land tax|ഭൂനികുതി|കരം|electricity bill|കറന്റ് ബിൽ|വൈദ്യുതി ബിൽ|വില്ലേജ്|psc|പി\s?എസ്\s?സി|registration|രജിസ്ട്രേഷൻ|\brc\b|ആർസി|vahan|വാഹൻ|government|ഗവൺമെന്റ്|സർക്കാർ/i;
 const LEARN = /പഠിക്ക|പഠിപ്പ|learn|how to|എങ്ങനെ|tutorial|ട്യൂട്ടോറിയൽ|ക്ലാസ്|class|വീഡിയോ|video|ഉണ്ടാക്ക|recipe|റെസിപ്പി|കാണണം|കേൾക്കണം|പാട്ട്|song/i;
 const ON_PAGE = new RegExp('(?<![a-z])(this|here)(?![a-z])|(?<![' + ML + '])(ഈ|ഇവിടെ|ഇത്)(?![' + ML + '])', 'i');
 // Words that carry no topic.

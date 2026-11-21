@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Koode — കൂടെ",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Screen-aware guide: points to the right control, waits for you to act, and verifies each step.",
   "minimum_chrome_version": "116",
   "permissions": [

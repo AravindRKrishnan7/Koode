@@ -70,9 +70,10 @@ test('routing: ambiguous → options; explicit official → confirm; explicit vi
   assert.deepEqual([r.service.id, r.want], ['dl_renewal', 'official']);
   assert.equal(c('ലൈസൻസ് വിവരങ്ങൾ sarathi വെബ്സൈറ്റിൽ നോക്കണം').want, 'official');
   assert.equal(c('open the driving licence official website').want, 'official');
+  // Explicit video: a search of the user's own topic (the catalogue query is used for the options card's tutorial).
   r = c('ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ വീഡിയോ');
-  assert.deepEqual([r.type, r.want], ['service', 'video']);
-  assert.equal(Cat.videoSearch(r.entry, r.service).query, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ ഓൺലൈൻ');
+  assert.deepEqual([r.type, r.search.query, r.serviceId], ['youtube_search', 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ', 'sarathi']);
+  assert.equal(Cat.videoSearch(Cat.byId('sarathi'), Cat.serviceOf(Cat.byId('sarathi'), 'dl_renewal')).query, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ ഓൺലൈൻ');
   assert.equal(c('ലേണേഴ്സ് ലൈസൻസിന് അപേക്ഷിക്കണം', 'youtube').service.id, 'learner_licence');
   assert.equal(c('യൂട്യൂബിൽ ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ വീഡിയോ', 'whatsapp').type, 'youtube_search');
   // On the official site already: guide here.

@@ -533,7 +533,24 @@ async function main() {
     // S5) Explicit video → tutorial search (M1), no options.
     await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ വീഡിയോ');
     await page.waitForURL(/www\.youtube\.com\/results/, { timeout: 15000 });
-    check('S5 explicit "വീഡിയോ" → Malayalam tutorial search directly', new URL(page.url()).searchParams.get('search_query') === 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ ഓൺലൈൻ', page.url());
+    check('S5 explicit "വീഡിയോ" → Malayalam search of the user’s own topic, directly', new URL(page.url()).searchParams.get('search_query') === 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ', page.url());
+
+    // S5b) Regression (live 0.5.1): already ON YouTube, a vehicle-registration video request searches; the live
+    //      "government website for my vehicle licence number" request goes to the intent planner, not the page planner.
+    await speak(sp, 'എന്റെ വണ്ടിയുടെ രജിസ്ട്രേഷൻ എങ്ങനെ ചെയ്യാം എന്നതിന്റെ വീഡിയോ വേണം');
+    await page.waitForURL((u) => /results/.test(u.href) && /രജിസ്ട്രേഷൻ/.test(new URL(u.href).searchParams.get('search_query') || ''), { timeout: 15000 });
+    check('S5b on YouTube: "…വണ്ടിയുടെ രജിസ്ട്രേഷൻ… വീഡിയോ വേണം" → new YouTube search for the vehicle topic', new URL(page.url()).searchParams.get('search_query') === 'വണ്ടിയുടെ രജിസ്ട്രേഷൻ എങ്ങനെ ചെയ്യാം', page.url());
+    await waitPage(page, (x) => x.koodeState === 'waiting' || x.koodeState === 'idle' || x.koodeState === 'error', 'results guidance', 20000).catch(() => null);
+    const ytUrl = page.url();
+    const pa = readLog().length;
+    ia = readIntentLog().length;
+    await speak(sp, 'എനിക്ക് എന്റെ വണ്ടിയുടെ ലൈസൻസ് നമ്പർ കുറിച്ച് അറിയണമായിരുന്നു. അപ്പോൾ അതിന് ഗവൺമെന്റ് വെബ്സൈറ്റ്സ് ഏതേലും ഉണ്ടോ? ഉണ്ടെങ്കിൽ എനിക്ക് അങ്ങോട്ട് പോകണം.');
+    q = await waitPanel(sp, (x) => x.koodeIntentResult, 'live transcript intent', 15000);
+    await sleep(800);
+    check('S5b on YouTube: the live transcript → intent (service, no verified site), not Sarathi, no YouTube page-planner call, no navigation',
+      q.koodeIntent === 'intent' && q.koodeIntentResult === 'service' && /പരിശോധിച്ച്/.test(q.koodeMl || '') && !q.koodeConfirmService && !q.koodeOptions &&
+      !logEntries(pa).some((e) => e.request && /വണ്ടിയുടെ ലൈസൻസ്/.test(e.request.goal)) && page.url() === ytUrl && intentEntries(ia).length === 1,
+      { route: q.koodeIntent, result: q.koodeIntentResult, plannerGotTranscript: logEntries(pa).some((e) => e.request && /വണ്ടിയുടെ ലൈസൻസ്/.test(e.request.goal)), ml: (q.koodeMl || '').slice(0, 50) });
 
     // S6) Options → official → "വേണ്ട" (no) → nothing opens.
     await page.goto('chrome://newtab/').catch(() => {});

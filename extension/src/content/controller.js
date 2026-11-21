@@ -517,7 +517,7 @@
     if (resp && resp.planner) panel.setPlanner(resp.planner.model || resp.planner.provider, resp.planner.mock, false);
     panel.log('intent: ' + ((resp && (resp.type || resp.code || resp.error)) || 'no response'));
     host().dataset.koodeIntent = (resp && (resp.type || resp.code)) || 'error';
-    const a = G.intentToAction(resp, { guidable: true });
+    const a = G.intentToAction(resp, { guidable: true, goal: text });
     if (a.kind === 'youtube_search') return youtubeSearch(a.search, text, opts, privacy);
     if (a.kind === 'guide') return start(text, opts);
     if (a.kind === 'service') return serviceFlow({ ...a, goal: text }, opts, privacy);

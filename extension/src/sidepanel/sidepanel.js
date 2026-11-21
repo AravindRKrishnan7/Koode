@@ -244,7 +244,7 @@ async function intent(text, opts, talk) {
   const resp = await send({ type: 'koode:intent', payload: { goal: text, site_id: S.site && S.site.id } }).catch((e) => ({ error: String(e && e.message || e) }));
   document.body.dataset.koodeIntentResult = (resp && (resp.type || resp.code)) || 'error';
   log('intent → ' + document.body.dataset.koodeIntentResult + (resp && resp.planner ? ` (${resp.planner.mock ? 'mock' : resp.planner.model})` : ''));
-  const a = Goals.intentToAction(resp, { guidable: !!S.site });
+  const a = Goals.intentToAction(resp, { guidable: !!S.site, goal: text });
   if (a.kind === 'youtube_search') return search(a.search, text, opts, talk);
   if (a.kind === 'service') return serviceFlow({ ...a, goal: text }, opts, talk);
   if (a.kind === 'guide') return handleGuide(text, opts);

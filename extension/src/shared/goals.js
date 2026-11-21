@@ -243,7 +243,9 @@
       case 'service': {
         // Only a verified catalogue entry can be opened; otherwise explain, and offer (never start) a tutorial search.
         const Cat = globalThis.KoodeCatalogue;
-        const entry = Cat && resp.service_id ? Cat.byId(resp.service_id) : null;
+        let entry = Cat && resp.service_id ? Cat.byId(resp.service_id) : null;
+        // A model nomination outside the entry's scope (vehicle RC → driving-licence portal) is not trusted.
+        if (entry && ctx.goal && Cat.excluded(entry, ctx.goal)) entry = null;
         if (entry) return { kind: 'service', entry, service: Cat.serviceOf(entry, resp.subservice_id), want: resp.wants || 'unspecified' };
         const offer = planSearch(resp);
         return { kind: 'say', ...MSG.service, offer: offer || null, offerLabel: MSG.offer, reason: 'service_not_verified' };

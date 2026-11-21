@@ -36,6 +36,12 @@
       topic: ['driving licence', 'driving license', 'driving licen', 'learner licence', 'learner license', 'learners licence', 'dl', 'll',
         'sarathi', 'parivahan', 'ഡ്രൈവിംഗ് ലൈസൻസ്', 'ഡ്രൈവിങ് ലൈസൻസ്', 'ഡ്രൈവിംഗ് ലൈസെൻസ്', 'ലേണേഴ്സ് ലൈസൻസ്', 'ലേണേഴ്സ്', 'ലേണർ ലൈസൻസ്',
         'സാരഥി', 'പരിവാഹൻ', 'ഡിഎൽ', 'ലൈസൻസ് പുതുക്ക', 'ഡ്രൈവിംഗ് ടെസ്റ്റ്'],
+      // Vehicle registration (RC), tax, permits and insurance are VAHAN services, not Sarathi: a request about the
+      // vehicle is excluded unless it clearly names the driver's licence (driving / learner / "to drive").
+      notTopic: ['vehicle', 'vehicles', 'registration', 'rc', 'rc book', 'vahan', 'number plate', 'insurance', 'permit', 'fitness', 'road tax', 'vandi', 'vandiyude',
+        'വണ്ടി', 'വാഹന', 'വാഹൻ', 'രജിസ്ട്രേഷൻ', 'ആർസി', 'ആർ സി', 'നമ്പർ പ്ലേറ്റ്', 'ഇൻഷുറൻസ്', 'പെർമിറ്റ്', 'ഫിറ്റ്നസ്'],
+      strongTopic: ['driving', 'learner', 'learners', 'dl', 'sarathi', 'odikkan', 'ഡ്രൈവിംഗ്', 'ഡ്രൈവിങ്', 'ലേണേഴ്സ്', 'ലേണർ', 'സാരഥി', 'ഡിഎൽ', 'ഓടിക്കാൻ', 'ഓടിക്കാനുള്ള'],
+      scope: 'driving licence and learner licence services only (NOT vehicle registration/RC, vehicle tax, permits or insurance)',
       services: [
         {
           id: 'dl_details', en: 'Know your driving licence details (DL Search)', ml: 'ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയാൻ',
@@ -80,15 +86,24 @@
   }
   for (const e of CATALOGUE) {
     e.topicRes = e.topic.map(wordRe);
+    e.notRes = (e.notTopic || []).map(wordRe);
+    e.strongRes = (e.strongTopic || []).map(wordRe);
     for (const s of e.services) s.res = s.words.map(wordRe);
   }
 
   // Best catalogue entry (and sub-service) a request is about, or null. A sub-service is chosen only when
   // its words appear; otherwise the user is taken to the entry page and the step planner asks/guides.
+  // A request outside the entry's scope (e.g. vehicle registration for the driving-licence portal).
+  function excluded(entry, text) {
+    const t = norm(text);
+    return !!entry && entry.notRes.some((re) => re.test(t)) && !entry.strongRes.some((re) => re.test(t));
+  }
+
   function match(text) {
     const t = norm(text);
     let best = null;
     for (const e of CATALOGUE) {
+      if (excluded(e, t)) continue;
       const hits = e.topicRes.filter((re) => re.test(t)).length;
       if (!hits) continue;
       const scored = e.services.map((s) => [s.res.filter((re) => re.test(t)).length, s]).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0]);
@@ -146,7 +161,7 @@
       ' The user types every personal detail, captcha and OTP themselves.';
   }
 
-  const api = { CATALOGUE, match, wants, answer, byId, serviceOf, forHost, origins, onHosts, videoSearch, taskHint };
+  const api = { CATALOGUE, match, excluded, wants, answer, byId, serviceOf, forHost, origins, onHosts, videoSearch, taskHint };
   globalThis.KoodeCatalogue = api;
   if (typeof globalThis.Koode === 'object' && globalThis.Koode) globalThis.Koode.catalogue = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
