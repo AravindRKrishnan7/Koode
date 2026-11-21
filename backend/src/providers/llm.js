@@ -2,7 +2,8 @@
 // Each returns the raw text completion for (system, user) messages.
 
 const MAX_RATE_LIMIT_RETRIES = 4;
-const MAX_RATE_LIMIT_WAIT_MS = 20000;
+// Keep the total back-off well under the browser-side planner request lifetime (~30 s).
+const MAX_RATE_LIMIT_WAIT_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Seconds to wait from a 429: Retry-After header, else "try again in 3.9s" / "720ms" in the body.
@@ -21,8 +22,8 @@ async function post(url, headers, body, timeoutMs, meta = {}) {
     try {
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctrl.signal });
       const text = await res.text();
-      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-        const wait = Math.min(retryAfterMs(res, text) + 250, MAX_RATE_LIMIT_WAIT_MS);
+      const wait = res.status === 429 ? retryAfterMs(res, text) + 250 : 0;
+      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES && (meta.rateLimitWaitMs || 0) + wait <= MAX_RATE_LIMIT_WAIT_MS) {
         meta.rateLimitWaitMs = (meta.rateLimitWaitMs || 0) + wait;
         await sleep(wait);
         continue;
