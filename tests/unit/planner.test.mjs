@@ -92,3 +92,16 @@ test('page_alert keeps only a boolean flag, never alert text or values', () => {
   const req = sanitizePlanRequest(b);
   assert.deepEqual(req.last_event, { type: 'page_alert', alert: true });
 });
+
+test('planner reconsiders a first cannot_find once, then accepts the answer', async () => {
+  const replies = ['{"status":"cannot_find","target_id":null}', '{"status":"guide","target_id":"s3_3"}'];
+  const prompts = [];
+  const llm = async (_cfg, _sys, user) => { prompts.push(user); return replies.shift(); };
+  const { result } = await planStep(body(), { provider: 'openai', model: 'test' }, { llm });
+  assert.equal(result.target_id, 's3_3');
+  assert.match(prompts[1], /You answered cannot_find/);
+  const again = async () => '{"status":"cannot_find","target_id":null}';
+  const r2 = await planStep(body(), { provider: 'openai', model: 'test' }, { llm: again });
+  assert.equal(r2.result.status, 'cannot_find');
+  assert.equal(r2.result.attempts, 2);
+});

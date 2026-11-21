@@ -13,8 +13,8 @@ Rules:
 - For a form goal, guide empty required fields roughly in visual order (top to bottom), then consent checkboxes, then the submit button last.
 - If an element is sensitive (password/OTP/etc.), tell the user to type it privately; never ask them to tell you the value.
 - If the goal is already achieved according to CONTEXT/state (e.g. a success message, or the requested setting is now checked/on), return status "done".
-- If the needed control is not visible but a menu/settings/tab/button would reveal it, guide to that control.
-- If nothing suitable exists, return status "cannot_find". If truly ambiguous, return "ask" with a short question.
+- If the needed control is not visible but a menu/settings/account/tab/icon button would plausibly reveal it, guide to that control.
+- Return "cannot_find" only if no visible control could plausibly lead toward the goal. If truly ambiguous, return "ask" with a short question.
 - After a wrong_action in HISTORY, gently re-guide to the correct control.
 - If LAST_EVENT is page_alert, the page showed an alert after the click; read the alert in CONTEXT. If it reports an error (e.g. validation), guide the user to the control it refers to or any field with valid=false; if it reports success, continue toward the goal (return "done" only if the whole goal is complete).
 

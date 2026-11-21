@@ -3,6 +3,7 @@ const env = process.env;
 
 function detectProvider() {
   if (env.KOODE_PROVIDER) return env.KOODE_PROVIDER.toLowerCase();
+  if (env.GROQ_API_KEY) return 'groq';
   if (env.OPENAI_API_KEY) return 'openai';
   if (env.ANTHROPIC_API_KEY) return 'anthropic';
   if (env.GEMINI_API_KEY || env.GOOGLE_API_KEY) return 'gemini';
@@ -11,6 +12,7 @@ function detectProvider() {
 }
 
 const DEFAULT_MODELS = {
+  groq: 'openai/gpt-oss-20b',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
   gemini: 'gemini-2.0-flash',
@@ -20,6 +22,8 @@ const DEFAULT_MODELS = {
 
 export function loadConfig() {
   const provider = detectProvider();
+  // KOODE_REQUIRE_LLM=1: refuse to start on the mock planner (used for real-model testing).
+  if (env.KOODE_REQUIRE_LLM === '1' && provider === 'mock') throw new Error('KOODE_REQUIRE_LLM=1 but no LLM provider key is set');
   return {
     port: Number(env.PORT || 8787),
     host: env.HOST || '127.0.0.1',
@@ -28,11 +32,14 @@ export function loadConfig() {
     timeoutMs: Number(env.KOODE_LLM_TIMEOUT_MS || 20000),
     logPayloads: env.KOODE_LOG !== '0',
     keys: {
+      groq: env.GROQ_API_KEY,
       openai: env.OPENAI_API_KEY,
       anthropic: env.ANTHROPIC_API_KEY,
       gemini: env.GEMINI_API_KEY || env.GOOGLE_API_KEY,
       sarvam: env.SARVAM_API_KEY
     },
-    openaiBaseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    openaiBaseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    groqBaseUrl: env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+    reasoningEffort: env.KOODE_REASONING_EFFORT || 'low'
   };
 }

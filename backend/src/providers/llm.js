@@ -1,33 +1,59 @@
 // Thin HTTP adapters for LLM providers (Node 20 fetch, no SDKs).
 // Each returns the raw text completion for (system, user) messages.
 
-async function post(url, headers, body, timeoutMs) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctrl.signal });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-    return JSON.parse(text);
-  } finally {
-    clearTimeout(t);
+const MAX_RATE_LIMIT_RETRIES = 4;
+const MAX_RATE_LIMIT_WAIT_MS = 20000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Seconds to wait from a 429: Retry-After header, else "try again in 3.9s" / "720ms" in the body.
+function retryAfterMs(res, text) {
+  const h = Number(res.headers.get('retry-after'));
+  if (h > 0) return h * 1000;
+  const m = text.match(/try again in ([\d.]+)(ms|s)/);
+  return m ? Number(m[1]) * (m[2] === 's' ? 1000 : 1) : 2000;
+}
+
+// meta.rateLimitWaitMs accumulates time spent backing off on 429s (reported separately from model latency).
+async function post(url, headers, body, timeoutMs, meta = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctrl.signal });
+      const text = await res.text();
+      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+        const wait = Math.min(retryAfterMs(res, text) + 250, MAX_RATE_LIMIT_WAIT_MS);
+        meta.rateLimitWaitMs = (meta.rateLimitWaitMs || 0) + wait;
+        await sleep(wait);
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+      return JSON.parse(text);
+    } finally {
+      clearTimeout(t);
+    }
   }
 }
 
-async function openaiCompatible({ baseUrl, key, model, system, user, timeoutMs, jsonMode = true, extraHeaders = {} }) {
+async function openaiCompatible({ baseUrl, key, model, system, user, timeoutMs, jsonMode = true, extraHeaders = {}, extraBody = {}, meta }) {
   const body = {
     model,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    temperature: 0.1
+    temperature: 0.1,
+    ...extraBody
   };
   if (jsonMode) body.response_format = { type: 'json_object' };
-  const data = await post(baseUrl + '/chat/completions', { Authorization: 'Bearer ' + key, ...extraHeaders }, body, timeoutMs);
+  const data = await post(baseUrl + '/chat/completions', { Authorization: 'Bearer ' + key, ...extraHeaders }, body, timeoutMs, meta);
   return data.choices?.[0]?.message?.content || '';
 }
 
-export async function complete(cfg, system, user) {
+export async function complete(cfg, system, user, meta = {}) {
   const { provider, model, timeoutMs, keys } = cfg;
   switch (provider) {
+    case 'groq':
+      // gpt-oss models are reasoning models; low effort keeps per-step latency down.
+      return openaiCompatible({ baseUrl: cfg.groqBaseUrl, key: keys.groq, model, system, user, timeoutMs, meta,
+        extraBody: /gpt-oss/.test(model) ? { reasoning_effort: cfg.reasoningEffort } : {} });
     case 'openai':
       return openaiCompatible({ baseUrl: cfg.openaiBaseUrl, key: keys.openai, model, system, user, timeoutMs });
     case 'sarvam':

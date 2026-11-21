@@ -27,7 +27,9 @@ docs/        ARCHITECTURE.md, CONTRACTS.md
 
 ```bash
 cd backend
-OPENAI_API_KEY=...  npm start         # or ANTHROPIC_API_KEY / GEMINI_API_KEY / SARVAM_API_KEY
+GROQ_API_KEY=...  npm start           # Groq openai/gpt-oss-20b (default real planner)
+# or OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY / SARVAM_API_KEY
+# KOODE_REQUIRE_LLM=1 refuses to start without a real provider (no mock fallback)
 # no key → deterministic MOCK test harness, labelled "MOCK test harness (not AI)" in the panel
 ```
 
@@ -37,7 +39,7 @@ OPENAI_API_KEY=...  npm start         # or ANTHROPIC_API_KEY / GEMINI_API_KEY / 
 
 The content script auto-loads on `localhost`/`127.0.0.1`. On other sites, click the Koode toolbar button to opt in for that tab (`activeTab`).
 
-Optional env: `KOODE_PROVIDER`, `KOODE_MODEL`, `KOODE_LLM_TIMEOUT_MS`, `OPENAI_BASE_URL`, `PORT`, `KOODE_LOG=0` (disable the sanitised audit log in `backend/logs/`), `KOODE_FAULT=stale_first` (test: first answer uses a stale ID).
+Optional env: `KOODE_PROVIDER`, `KOODE_MODEL`, `KOODE_LLM_TIMEOUT_MS`, `OPENAI_BASE_URL`, `GROQ_BASE_URL`, `KOODE_REASONING_EFFORT` (gpt-oss: low|medium|high, default low), `KOODE_REQUIRE_LLM=1`, `HOST` (default 127.0.0.1), `PORT`, `KOODE_LOG=0` (disable the sanitised audit log in `backend/logs/`), `KOODE_FAULT=stale_first` (test: first answer uses a stale ID).
 
 ## Test
 

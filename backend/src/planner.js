@@ -17,13 +17,19 @@ export async function planStep(body, cfg, { llm = complete } = {}) {
 
   let user = buildUserMessage(req);
   let lastReason = '';
+  const meta = { rateLimitWaitMs: 0 };
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const raw = await llm(cfg, SYSTEM_PROMPT, user);
+    const raw = await llm(cfg, SYSTEM_PROMPT, user, meta);
     const parsed = extractJson(raw);
     const v = validatePlan(parsed, req);
-    if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, attempts: attempt } };
+    // A premature give-up is the commonest real-model miss (e.g. settings hidden behind a gear/menu): reconsider once.
+    if (v.ok && v.plan.status === 'cannot_find' && attempt === 1 && req.snapshot.candidates.length) {
+      user = buildUserMessage(req) + '\n\nYou answered cannot_find. Re-check CANDIDATES: if any menu/settings/account/tab/icon control could plausibly lead toward the goal, guide to it; otherwise answer cannot_find again.';
+      continue;
+    }
+    if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, attempts: attempt } };
     lastReason = v.reason;
     user = buildUserMessage(req) + `\n\nYour previous answer was rejected (${v.reason}). Return valid JSON and copy target_id exactly from CANDIDATES.`;
   }
-  return { req, result: { status: 'cannot_find', target_id: null, instruction_en: 'Planner returned an invalid target (' + lastReason + ').', instruction_ml: 'ശരിയായ ഘടകം കണ്ടെത്താനായില്ല.', planner, latency_ms: Date.now() - started, attempts: 2, rejected: lastReason } };
+  return { req, result: { status: 'cannot_find', target_id: null, instruction_en: 'Planner returned an invalid target (' + lastReason + ').', instruction_ml: 'ശരിയായ ഘടകം കണ്ടെത്താനായില്ല.', planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, attempts: 2, rejected: lastReason } };
 }

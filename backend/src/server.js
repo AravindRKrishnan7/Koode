@@ -71,7 +71,7 @@ const server = http.createServer(async (req, res) => {
       }
       const { req: sanitized, result } = await planStep(body, cfg);
       audit({ request: sanitized, result });
-      console.log(`[plan] ${result.status} ${result.target_id || ''} ${result.latency_ms}ms ${cfg.provider}/${cfg.model} cands=${sanitized.snapshot.candidates.length} goal="${sanitized.goal.slice(0, 40)}"`);
+      console.log(`[plan] ${result.status} ${result.target_id || ''} ${result.latency_ms}ms ${cfg.provider}/${cfg.model} cands=${sanitized.snapshot.candidates.length} goal_chars=${sanitized.goal.length}`);
       return send(res, 200, result);
     } catch (e) {
       console.error('[plan] error', e.message);
