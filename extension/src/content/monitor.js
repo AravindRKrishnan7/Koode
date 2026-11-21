@@ -113,8 +113,8 @@
         const diff = await waitForChange(before, C.CLICK_EVIDENCE_TIMEOUT_MS);
         st.busy = false;
         if (!isCurrent()) return;
-        const alertLine = diff && diff.added.find((l) => l.startsWith('ctx|alert|'));
-        if (alertLine) verify({ evidence: 'dom_change', diff, page_alert: alertLine.slice('ctx|alert|'.length) });
+        // Alert text stays out of the event (it may echo typed values); the planner reads the live context.
+        if (diff && diff.added.some((l) => l.startsWith('ctx|alert|'))) verify({ evidence: 'dom_change', diff, page_alert: true });
         else if (diff) verify({ evidence: 'dom_change', diff });
         else cb.noChange();
         return;

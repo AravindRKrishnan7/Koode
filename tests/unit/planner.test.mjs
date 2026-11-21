@@ -86,9 +86,9 @@ test('mock guides back to a filled but invalid required field', async () => {
   assert.equal(result.target_id, 's3_1');
 });
 
-test('page_alert text survives sanitising, unknown last_event fields do not', () => {
+test('page_alert keeps only a boolean flag, never alert text or values', () => {
   const b = body();
-  b.last_event = { type: 'page_alert', alert: 'Please complete: Mobile', value: '123' };
+  b.last_event = { type: 'page_alert', alert: true, text: 'Invalid value 9876543210', value: '123' };
   const req = sanitizePlanRequest(b);
-  assert.deepEqual(req.last_event, { type: 'page_alert', alert: 'Please complete: Mobile' });
+  assert.deepEqual(req.last_event, { type: 'page_alert', alert: true });
 });
