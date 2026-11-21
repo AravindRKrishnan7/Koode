@@ -105,3 +105,20 @@ test('planner reconsiders a first cannot_find once, then accepts the answer', as
   assert.equal(r2.result.status, 'cannot_find');
   assert.equal(r2.result.attempts, 2);
 });
+
+test('planner reconsiders a first "ask" once (premature give-up phrased as a question)', async () => {
+  const replies = ['{"status":"ask","target_id":null,"instruction_en":"Where is dark mode?"}', '{"status":"guide","target_id":"s3_3"}'];
+  const prompts = [];
+  const { result } = await planStep(body(), { provider: 'groq', model: 'm' }, { llm: async (_c, _s, u) => { prompts.push(u); return replies.shift(); } });
+  assert.equal(result.status, 'guide');
+  assert.match(prompts[1], /You answered ask/);
+});
+
+test('compact prompt keeps every candidate id and its state', async () => {
+  let user = '';
+  await planStep(body(), { provider: 'groq', model: 'm' }, { llm: async (_c, _s, u) => { user = u; return '{"status":"done"}'; } });
+  const sent = JSON.parse(user).CANDIDATES;
+  const orig = body();
+  assert.deepEqual(sent.map((c) => c.id), orig.snapshot.candidates.map((c) => c.id));
+  for (const c of sent) assert.ok(!('tag' in c) && !('in_viewport' in c) && !('bbox' in c));
+});

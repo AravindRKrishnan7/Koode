@@ -75,6 +75,7 @@ async function voiceFixture() {
   const file = path.join(ARTIFACTS, 'voice-goal-ml.wav');
   const r = await fetch(BACKEND + '/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: VOICE_GOAL, lang: 'ml-IN' }) });
   const body = await r.json();
+  if (!r.ok && fs.existsSync(file)) return { file, seconds: null, reused: true }; // e.g. voice-fail runs with a bad key
   if (!r.ok) throw new Error('voice fixture: ' + body.error);
   const wav = Buffer.from(body.audio, 'base64');
   const dataAt = wav.indexOf('data') + 8;
@@ -170,18 +171,27 @@ async function shot(page, file) {
 function readLog() { return fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8') : ''; }
 
 // expectPath: ordered target labels for the canonical route; null = judge by form validity.
-async function guidedRun(page, name, { goal, voice = false, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
+async function guidedRun(page, name, { goal, voice = false, preStarted = false, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
   const res = { name, goal, input: voice ? 'voice' : 'text', steps: [], wrongClick: null, anchorChecks: [], done: false, planner: null };
   let pathIdx = 0;
   const released = voice ? await startVoice(page, VOICE_HOLD_MS) : null;
-  if (!voice) await startGoal(page, goal);
+  let confirmed = null;
+  if (voice) {
+    // Koode shows what it heard and waits; the "user" confirms with a real click on ✓.
+    const c = await waitFor(page, (q) => (q.koodeState === 'confirm' && q.koodeConfirmRect) || q.koodeState === 'idle', 'transcript confirmation', 20000);
+    if (c.koodeState !== 'confirm') { res.error = 'no confirmation: ' + c.koodeInstruction + ' | ' + c.koodeVoiceError; return res; }
+    res.releaseToConfirmMs = Date.now() - released;
+    const [x, y, w, h] = c.koodeConfirmRect.split(',').map(Number);
+    await page.mouse.click(x + w / 2, y + h / 2);
+    confirmed = Date.now();
+  } else if (!preStarted) await startGoal(page, goal);
   let lastStep = 0;
   for (let i = 0; i < maxSteps; i++) {
     const p = await waitFor(page, (p) => (p.koodeState === 'waiting' && Number(p.koodeStep) > lastStep && p.overlay && p.overlay.koodeTip) || p.koodeState === 'done' || p.koodeState === 'error' || (p.koodeState === 'idle' && Number(p.koodeStep || 0) >= 0 && p.koodeEvents > 3), 'next step');
     res.planner = p.koodePlanner;
     if (p.koodeState === 'done') { res.done = true; res.finalInstruction = p.koodeInstruction; break; }
     if (p.koodeState !== 'waiting') { res.error = `${p.koodeState}: ${p.koodeInstruction} | ${p.koodeLastEvent}`; break; }
-    if (released && !res.voiceToArrowMs) res.voiceToArrowMs = Date.now() - released;
+    if (confirmed && !res.confirmToArrowMs) res.confirmToArrowMs = Date.now() - confirmed;
     lastStep = Number(p.koodeStep);
     await sleep(400); // let smooth scroll settle before measuring
     const el = await pointedElement(page);
@@ -218,7 +228,7 @@ async function guidedRun(page, name, { goal, voice = false, maxSteps = 14, wrong
     await perform(page, el2);
     res.steps.push(step);
   }
-  if (voice) await waitFor(page, (q) => Number(q.koodeVoiceTtsCount || 0) > lastStep || q.koodeVoiceError, 'spoken replies', 15000).catch(() => {});
+  if (voice) await waitFor(page, (q) => Number(q.koodeVoiceTtsCount || 0) > lastStep + 1 || q.koodeVoiceError, 'spoken replies', 15000).catch(() => {});
   const fin = await panel(page);
   res.finalState = fin.koodeState;
   if (voice) res.voice = Object.fromEntries(Object.entries(fin).filter(([k]) => k.startsWith('koodeVoice')).map(([k, v]) => [k.slice(10, 11).toLowerCase() + k.slice(11), v]));
@@ -231,7 +241,7 @@ async function main() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const health = await fetch(BACKEND + '/health').then((r) => r.json());
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-e2e-'));
-  const wantVoice = (!only || only === 'voice') && health.voice;
+  const wantVoice = (!only || ['voice', 'mic-denied', 'voice-fail'].includes(only)) && health.voice;
   const fixture = wantVoice ? await voiceFixture() : null;
   const micArgs = fixture ? ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${fixture.file}`] : [];
   const ctx = await chromium.launchPersistentContext(userDataDir, {
@@ -251,8 +261,11 @@ async function main() {
     if (!only || only === 'form') scenarios.push(['form', r]);
     if (!only || only === 'settings-a') scenarios.push(['settings-a', r]);
     if (!only || only === 'settings-b') scenarios.push(['settings-b', r]);
-    if (wantVoice) scenarios.push(['voice', r]);
+    if (wantVoice && only !== 'mic-denied' && only !== 'voice-fail') scenarios.push(['voice', r]);
   }
+  if (wantVoice && (!only || only === 'mic-denied')) scenarios.push(['mic-denied', null]);
+  // Only meaningful against a backend started with an invalid SARVAM_API_KEY.
+  if (only === 'voice-fail') scenarios.push(['voice-fail', null]);
 
   for (const [kind, r] of scenarios) {
     const name = r ? `${kind}-run${r}` : kind;
@@ -279,6 +292,28 @@ async function main() {
         run.transcript = first ? first.request.goal : null;
         const norm = (s) => (s || '').replace(/[\s.,!?।]+/g, '');
         run.transcriptExact = norm(run.transcript) === norm(VOICE_GOAL);
+        results.runs.push(run);
+      } else if (kind === 'mic-denied' || kind === 'voice-fail') {
+        // Voice fails (mic permission denied / speech API rejects the key): Koode must explain and the typed fallback must still work.
+        await page.goto(BACKEND + '/demo/settings.html?layout=b');
+        const cdp = await ctx.newCDPSession(page);
+        if (kind === 'mic-denied') await cdp.send('Browser.setPermission', { permission: { name: 'audioCapture' }, setting: 'denied', origin: new URL(BACKEND).origin });
+        await page.waitForSelector('#koode-panel-root', { state: 'attached', timeout: 10000 });
+        const vp = page.viewportSize();
+        await page.mouse.click(vp.width - 49, vp.height - 49);
+        const p0 = await waitFor(page, (q) => q.koodeOpen === 'true' && q.koodeMicRect, 'panel open', 5000);
+        const [x, y, w, h] = p0.koodeMicRect.split(',').map(Number);
+        await page.mouse.move(x + w / 2, y + h / 2);
+        await page.mouse.down();
+        await sleep(kind === 'mic-denied' ? 800 : VOICE_HOLD_MS);
+        await page.mouse.up();
+        const p = await waitFor(page, (q) => q.koodeState === 'idle' && q.koodeVoiceError, 'voice fallback', 20000);
+        await shot(page, `${kind}-fallback.png`);
+        if (kind === 'mic-denied') await cdp.send('Browser.setPermission', { permission: { name: 'audioCapture' }, setting: 'granted', origin: new URL(BACKEND).origin });
+        await page.keyboard.type(VOICE_GOAL); // Koode focused the text box as the fallback
+        await page.keyboard.press('Enter');
+        const run = await guidedRun(page, kind, { goal: VOICE_GOAL, preStarted: true, maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] });
+        Object.assign(run, { input: 'text-after-voice-failure', voiceError: p.koodeVoiceError, fallbackMessage: p.koodeInstruction });
         results.runs.push(run);
       } else if (kind === 'stale') {
         // Only meaningful when backend runs with KOODE_FAULT=stale_first.
@@ -329,7 +364,7 @@ async function main() {
     fixture: fixture && { seconds: fixture.seconds, note: 'Sarvam Bulbul TTS voice, not a human recording' },
     runs: vr.length, completed: vr.filter((r) => r.done && r.reachedEnd).length, transcriptsExact: vr.filter((r) => r.transcriptExact).length,
     sttRoundTripMs: stat(num(vr.map((r) => r.voice && r.voice.sttMs))), sttSarvamMs: stat(num(vr.map((r) => r.voice && r.voice.sttBackendMs))),
-    releaseToArrowMs: stat(num(vr.map((r) => r.voiceToArrowMs))),
+    releaseToConfirmMs: stat(num(vr.map((r) => r.releaseToConfirmMs))), confirmToArrowMs: stat(num(vr.map((r) => r.confirmToArrowMs))),
     ttsRequestToPlayingMs: stat(num(vr.map((r) => r.voice && r.voice.ttsMs))), ttsSarvamMs: stat(num(vr.map((r) => r.voice && r.voice.ttsBackendMs))),
     spokenReplies: vr.map((r) => Number(r.voice && r.voice.ttsCount || 0)), errors: vr.map((r) => r.voice && r.voice.error).filter(Boolean)
   };

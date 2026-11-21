@@ -23,8 +23,9 @@ export async function planStep(body, cfg, { llm = complete } = {}) {
     const parsed = extractJson(raw);
     const v = validatePlan(parsed, req);
     // A premature give-up is the commonest real-model miss (e.g. settings hidden behind a gear/menu): reconsider once.
-    if (v.ok && v.plan.status === 'cannot_find' && attempt === 1 && req.snapshot.candidates.length) {
-      user = buildUserMessage(req) + '\n\nYou answered cannot_find. Re-check CANDIDATES: if any menu/settings/account/tab/icon control could plausibly lead toward the goal, guide to it; otherwise answer cannot_find again.';
+    // "ask" is the same miss phrased as a question ("where is the dark mode option?").
+    if (v.ok && (v.plan.status === 'cannot_find' || v.plan.status === 'ask') && attempt === 1 && req.snapshot.candidates.length) {
+      user = buildUserMessage(req) + `\n\nYou answered ${v.plan.status}. Re-check CANDIDATES: if any menu/settings/account/tab/icon control could plausibly lead toward the goal, guide to it; otherwise answer ${v.plan.status} again.`;
       continue;
     }
     if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, tokens: meta.tokens, attempts: attempt } };
