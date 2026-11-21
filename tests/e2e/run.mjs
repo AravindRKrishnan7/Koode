@@ -177,7 +177,7 @@ async function shot(page, file) {
 function readLog() { return fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8') : ''; }
 
 // expectPath: ordered target labels for the canonical route; null = judge by form validity.
-async function guidedRun(page, name, { goal, voice = false, preStarted = false, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
+async function guidedRun(page, name, { goal, voice = false, preStarted = false, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null, expectIds = null, clickCaption = false }) {
   const res = { name, goal, input: voice ? 'voice' : 'text', steps: [], wrongClick: null, anchorChecks: [], done: false, planner: null };
   let pathIdx = 0;
   const released = voice ? await startVoice(page, VOICE_HOLD_MS) : null;
@@ -205,7 +205,11 @@ async function guidedRun(page, name, { goal, voice = false, preStarted = false, 
     const anchor = await anchorError(page);
     const step = { step: lastStep, targetLabel: p.koodeTarget, instruction: p.koodeInstruction, pointedAt: el && { tag: el.tag, type: el.type, id: el.id, text: el.text }, anchor };
     res.anchorChecks.push(anchor);
-    if (expectPath) {
+    if (expectIds) {
+      // Element-id ground truth: distinguishes same-label options in different questions.
+      step.correct = pathIdx < expectIds.length && !!el && el.id === expectIds[pathIdx];
+      if (step.correct) pathIdx++;
+    } else if (expectPath) {
       step.correct = pathIdx < expectPath.length && (p.koodeTarget || '').trim().toLowerCase() === expectPath[pathIdx].toLowerCase();
       if (step.correct) pathIdx++;
     } else step.correct = !!(el && el.formCorrect);
@@ -232,14 +236,18 @@ async function guidedRun(page, name, { goal, voice = false, preStarted = false, 
     }
     const el2 = (await pointedElement(page)) || el;
     await shot(page, `${name}-step${lastStep}.png`);
-    await perform(page, el2);
+    if (clickCaption && el2 && el2.role === 'radio') {
+      // Users usually click the option text, not the 20px circle.
+      const box = await page.evaluate((id) => { const r = document.getElementById(id).closest('label').querySelector('span').getBoundingClientRect(); return [r.x + 8, r.y + r.height / 2]; }, el2.id);
+      await page.mouse.click(...box);
+    } else await perform(page, el2);
     res.steps.push(step);
   }
   if (voice) await waitFor(page, (q) => Number(q.koodeVoiceTtsCount || 0) > lastStep + 1 || q.koodeVoiceError, 'spoken replies', 15000).catch(() => {});
   const fin = await panel(page);
   res.finalState = fin.koodeState;
   if (voice) res.voice = Object.fromEntries(Object.entries(fin).filter(([k]) => k.startsWith('koodeVoice')).map(([k, v]) => [k.slice(10, 11).toLowerCase() + k.slice(11), v]));
-  if (expectPath) res.reachedEnd = pathIdx === expectPath.length;
+  if (expectPath || expectIds) res.reachedEnd = pathIdx === (expectIds || expectPath).length;
   await shot(page, `${name}-final.png`);
   return res;
 }
@@ -270,6 +278,7 @@ async function main() {
     if (!only || only === 'form') scenarios.push(['form', r]);
     if (!only || only === 'settings-a') scenarios.push(['settings-a', r]);
     if (!only || only === 'settings-b') scenarios.push(['settings-b', r]);
+    if (!only || only === 'gforms') scenarios.push(['gforms', r]);
     if (wantVoice && only !== 'mic-denied' && only !== 'voice-fail') scenarios.push(['voice', r]);
   }
   // Needs Chrome launched with --deny-permission-prompts, so it only runs alone.
@@ -290,6 +299,10 @@ async function main() {
       } else if (kind === 'settings-a') {
         await page.goto(BACKEND + '/demo/settings.html');
         results.runs.push(await guidedRun(page, name, { goal: 'Change this website to dark mode', maxSteps: 6, wrongClickAt: 1, wrongClickSelector: '#topbar a', expectPath: ['Settings', 'Appearance', 'Dark'] }));
+      } else if (kind === 'gforms') {
+        await page.goto(BACKEND + '/demo/gforms.html');
+        const goal = health.mock ? 'Fill in this form' : 'Register me for the morning session, travelling by train, then submit';
+        results.runs.push(await guidedRun(page, name, { goal, maxSteps: 6, clickCaption: true, expectIds: health.mock ? ['r1', 'r4', 'submit'] : ['r1', 'r5', 'submit'] }));
       } else if (kind === 'settings-b') {
         await page.goto(BACKEND + '/demo/settings.html?layout=b');
         results.runs.push(await guidedRun(page, name, { goal: 'ഈ വെബ്സൈറ്റ് ഡാർക്ക് മോഡിലേക്ക് മാറ്റണം', maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] }));

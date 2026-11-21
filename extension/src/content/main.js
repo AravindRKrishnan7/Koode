@@ -16,7 +16,12 @@
     if (h && h.ok && !h.voice) K.panel.setVoiceAvailable(false, 'not configured on the server');
   })();
 
-  chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.type === 'koode:open') K.panel.open(); });
+  chrome.runtime.onMessage.addListener((msg, _s, reply) => {
+    if (!msg) return;
+    if (msg.type === 'koode:open') K.panel.open();
+    if (msg.type === 'koode:start') { K.panel.open(); K.controller.start(msg.goal, { voice: msg.voice }); reply({ ok: true }); }
+    if (msg.type === 'koode:stop') { K.controller.stop(msg.quiet, msg.quiet); reply({ ok: true }); }
+  });
 
   (async () => {
     let task = null;

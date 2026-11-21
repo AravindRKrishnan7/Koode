@@ -106,6 +106,11 @@
     on('click', async (e) => {
       if (!e.isTrusted || isKoodeUi(e.target) || !isCurrent()) return;
       if (isOnTarget(e.target, target)) {
+        // Clicking a radio that is already selected leaves it selected: that is the requested state.
+        if (kind === 'check' && initialChecked && K.extractor.implicitRole(target.el) === 'radio') {
+          setTimeout(() => { if (isCurrent() && isChecked(target.el)) verify({ evidence: 'already_selected', checked: true }); }, 200);
+          return;
+        }
         if (kind !== 'click' || st.busy) return; // fill/check/select verify via their own events
         st.busy = true;
         st.lastClickOnTarget = true;
