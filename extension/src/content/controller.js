@@ -14,7 +14,8 @@
   // Mirror state to the side panel (instructions and step only; no page content beyond labels).
   const mirror = { state: 'idle' };
   const setState0 = panel.setState, setInstruction0 = panel.setInstruction;
-  const progress = () => send({ type: 'koode:progress', progress: { ...mirror, goal: S.active ? S.goal : '', step: S.step, active: S.active, site: K.sites && K.sites.forUrl(location.href)?.name } }).catch(() => {});
+  const here = () => (K.sites && K.sites.forUrl(location.href)) || null;
+  const progress = (extra) => send({ type: 'koode:progress', progress: { ...mirror, goal: S.active ? S.goal : '', step: S.step, active: S.active, site: here()?.name, siteId: here()?.id, ...extra } }).catch(() => {});
   panel.setState = (st) => { setState0(st); mirror.state = st; progress(); };
   panel.setInstruction = (i = {}) => { setInstruction0(i); mirror.ml = i.ml || ''; mirror.en = i.en || ''; progress(); };
 
@@ -37,10 +38,17 @@
     S.failed = false;
     S.lastEvent = lastEvent || null;
     if (S.step >= C.MAX_STEPS) return fail('Too many steps; stopping to avoid a loop.');
+    // After a URL change (SPA route or reload) let the new view render before reading it.
+    if (location.href !== S.snapHref) {
+      await K.ready.quiet(400, 2000);
+      if (my !== S.token || !S.active) return;
+    }
+    S.snapHref = location.href;
     const snap = extractor.snapshot();
     panel.log(`snapshot ${snap.snapshot_id}: ${snap.candidates.length} candidates`);
     const t0 = performance.now();
-    let resp;
+    let resp = localPlan(snap);
+    if (resp) { panel.log('local rule: ' + resp.rule); return planned(my, resp, 0, lastEvent); }
     // Normal steps take < 1 s; a longer wait is almost always the model's free-tier rate limit.
     const slow = setTimeout(() => { if (my === S.token) panel.setNotice('⏳ ഒരു നിമിഷം — AI സേവനം തിരക്കിലാണ്. · The AI service is busy; this can take up to 15 s.'); }, SLOW_NOTICE_MS);
     try {
@@ -52,13 +60,16 @@
     }
     if (my !== S.token || !S.active) return;
     panel.setNotice('');
-    const ms = Math.round(performance.now() - t0);
+    return planned(my, resp, Math.round(performance.now() - t0), lastEvent);
+  }
+
+  function planned(my, resp, ms, lastEvent) {
     if (resp && resp.code === 'rate_limited') return rateLimited(my, lastEvent, resp.retry_after_ms, resp.scope);
     if (resp && resp.code === 'offline') return fail('Koode backend is not reachable. Is it running?', 'Koode സെർവറുമായി ബന്ധപ്പെടാനായില്ല.');
     if (!resp || resp.error) return fail('Planner unavailable: ' + (resp && resp.error || 'no response'));
     S.rateRetries = 0;
     if (resp.rate_limit_wait_ms) panel.log(`waited ${resp.rate_limit_wait_ms}ms for model rate limit`);
-    if (resp.planner) panel.setPlanner(resp.planner.model || resp.planner.provider, resp.planner.mock);
+    if (resp.planner) panel.setPlanner(resp.planner.model || resp.planner.provider, resp.planner.mock, resp.planner.provider === 'rule');
     panel.log(`plan ${resp.status} ${resp.target_id || ''} in ${ms}ms (${resp.planner ? resp.planner.provider : '?'})`);
     S.lastPlan = resp;
 
@@ -90,6 +101,29 @@
     S.invalidRetries = 0;
     S.step += 1;
     show(resp, r);
+  }
+
+  // WhatsApp Web: chats, contacts and messages are private areas that are never read, so the model has
+  // nothing useful to plan on. A local rule (no AI, no network) points at the search control; after the
+  // user types a name, Koode hands over: the user picks the contact and writes/sends messages themselves.
+  const WA_RULE = { provider: 'rule', model: 'WhatsApp privacy rule (no AI)', mock: false };
+  function localPlan(snap) {
+    if (here()?.id !== 'whatsapp') return null;
+    if (S.history.some((h) => h.outcome === 'verified' && h.rule === 'wa_search')) {
+      return { status: 'done', rule: 'wa_handoff', planner: WA_RULE,
+        instruction_ml: 'ഇനി കോൺടാക്റ്റ് നിങ്ങൾ തന്നെ തിരഞ്ഞെടുത്ത് സന്ദേശം എഴുതി അയയ്ക്കൂ. Koode നിങ്ങളുടെ ചാറ്റുകൾ വായിക്കില്ല.',
+        instruction_en: 'Now choose the contact and write and send your message yourself. Koode never reads your chats.' };
+    }
+    const box = snap.candidates.find((c) => /textbox|searchbox|combobox/.test(c.role) && !c.sensitive && /search|തിരയ/i.test(c.label));
+    if (!box) {
+      return { status: 'cannot_find', rule: 'wa_no_search', planner: WA_RULE,
+        instruction_ml: 'WhatsApp-ൽ തിരയൽ ബോക്സ് കണ്ടില്ല. പേജ് പൂർണ്ണമായി തുറന്നോ എന്ന് നോക്കൂ.',
+        instruction_en: 'I could not find the WhatsApp search box. Check that WhatsApp has finished loading.' };
+    }
+    return { status: 'guide', target_id: box.id, rule: 'wa_search', planner: WA_RULE,
+      instruction_ml: `"${box.label}" എന്ന തിരയൽ ബോക്സിൽ ക്ലിക്ക് ചെയ്ത് ആളുടെ പേര് ടൈപ്പ് ചെയ്യൂ.`,
+      instruction_en: `Click the "${box.label}" box and type the person's name.`,
+      explanation_ml: 'Search എന്നാൽ തിരയുക. നിങ്ങൾ ടൈപ്പ് ചെയ്യുന്നത് Koode വായിക്കില്ല.' };
   }
 
   // Model rate limit outlasted the backend's back-off: count down visibly and retry the same step.
@@ -146,7 +180,7 @@
         panel.setInstruction({ ml: 'ഫോർമാറ്റ് ശരിയല്ലെന്ന് തോന്നുന്നു. ഒന്നുകൂടി നോക്കൂ.', en: 'That format does not look right. Please check and correct it.', explain: resp.explanation_ml });
       },
       navigating: ({ on_target }) => persist({ pending: { type: 'navigation', from: location.href, on_target, target_label: r.info.label } })
-    });
+    }, { fillIdleMs: resp.rule === 'wa_search' ? 1500 : 0 });
     panel.log(`pointing at ${r.id} "${r.info.label}" (${r.info.role}, expect ${kind})`);
     persist();
   }
@@ -168,7 +202,7 @@
       persist();
       return plan({ type: 'page_alert', label: r.info.label, alert: ev.page_alert });
     }
-    record({ target_label: r.info.label, role: r.info.role, action: kind, outcome: 'verified', evidence: ev.evidence });
+    record({ target_label: r.info.label, role: r.info.role, action: kind, outcome: 'verified', evidence: ev.evidence, rule: S.lastPlan && S.lastPlan.rule });
     panel.setState('verified');
     panel.setInstruction({ ml: 'ശരി! അടുത്ത ഘട്ടം നോക്കുന്നു…', en: 'Correct — checking the next step…' });
     overlay.success();
@@ -208,6 +242,14 @@
   let ttsCount = 0, ttsWarned = false;
   function say(text, force) {
     if ((!S.voice && !force) || !text) return;
+    // The side panel (open for this tab) plays replies: it holds the user's gesture, so a freshly
+    // loaded page's autoplay policy can't silence them. Otherwise the page plays them itself.
+    send({ type: 'koode:say', text }).then((r) => {
+      if (r && r.routed) { panel.setVoiceInfo({ ttsCount: ++ttsCount, ttsRouted: 'sidepanel' }); panel.log(`reply (${text.length} chars) spoken in the side panel`); return; }
+      sayHere(text);
+    }, () => sayHere(text));
+  }
+  function sayHere(text) {
     voice.speak(text).then((t) => {
       if (!t) return;
       panel.setVoiceInfo({ ttsCount: ++ttsCount, ttsMs: t.ms, ttsBackendMs: t.backend_ms });
@@ -268,6 +310,7 @@
 
   async function micDown() {
     voice.hush();
+    send({ type: 'koode:hush' }).catch(() => {});
     S.voiceToken = (S.voiceToken || 0) + 1; // the current task continues until a new goal is confirmed
     // Pause step verification while the user speaks/confirms (e.g. focus moving to ✓ must not complete a field step).
     if (S.active && S.target && !S.paused) { monitor.stop(); S.paused = true; }
@@ -319,7 +362,54 @@
 
   function confirmVoice(goal) {
     panel.setVoiceInfo({ confirmedAt: Math.round(performance.now()) });
-    start(goal, { voice: true });
+    route(goal, { voice: true });
+  }
+
+  // A request typed or spoken in the in-page panel: "open YouTube…" and "exit" use the same rule-based
+  // routing as the side panel (no model quota); everything else is a goal for this page.
+  function route(text, opts = {}) {
+    const c = K.sites.classify(text, { siteId: here()?.id });
+    panel.log('request routed: ' + c.type + (c.site ? ' ' + c.site.id : ''));
+    if (c.type === 'exit') return exit({ voice: opts.voice });
+    if (c.type === 'navigate') {
+      stop(true, true);
+      panel.setState('loading');
+      panel.setInstruction({ ml: `${c.site.ml || c.site.name} തുറക്കുന്നു…`, en: `Opening ${c.site.name}…` });
+      say(`${c.site.ml || c.site.name} തുറക്കുന്നു`, opts.voice);
+      send({ type: 'koode:navigate', siteId: c.site.id, goal: c.goal, voice: !!opts.voice }).then((r) => {
+        if (r && r.error) fail('Could not open ' + c.site.name + ': ' + r.error, 'തുറക്കാനായില്ല.');
+      }, () => {});
+      return;
+    }
+    if (c.type === 'already_here') {
+      panel.setState('idle');
+      panel.setInstruction({ ml: `${c.site.ml || c.site.name} ഇതിനകം തുറന്നിട്ടുണ്ട്. എന്താണ് ചെയ്യേണ്ടത്?`, en: `${c.site.name} is already open. What would you like to do here?` });
+      say(`${c.site.ml || c.site.name} ഇതിനകം തുറന്നിട്ടുണ്ട്. എന്താണ് ചെയ്യേണ്ടത്?`, opts.voice);
+      return;
+    }
+    if (c.type === 'need_link') {
+      panel.setState('idle');
+      panel.setInstruction({ ml: 'നിങ്ങളുടെ Google Form ലിങ്ക് (WhatsApp/ഇമെയിൽ) തുറക്കൂ; അവിടെ ഞാൻ സഹായിക്കാം. പരിശീലനത്തിന് "അപേക്ഷാ ഫോം തുറക്കൂ" എന്ന് പറയൂ.', en: 'Open your Google Form link (from WhatsApp or email) and I will help there. To practise, say "open the application form".' });
+      return;
+    }
+    start(c.goal || text, opts);
+  }
+
+  // Clean exit: stop guiding, forget the task, say goodbye, close the panel. The launcher stays.
+  function exit(opts = {}) {
+    stop(true, true);
+    // Exit requested in the side panel: it already cleared the session and says goodbye itself.
+    if (!opts.fromPanel) {
+      send({ type: 'koode:clearTask' }).catch(() => {});
+      send({ type: 'koode:exit', voice: !!opts.voice }).catch(() => {});
+    }
+    S.goal = '';
+    panel.setState('ended');
+    panel.setStep(0, '');
+    panel.setInstruction({ ml: 'ശരി, Koode അവസാനിപ്പിച്ചു. നന്ദി!', en: 'Okay — Koode session ended. Thank you!' });
+    if (opts.voice) say('ശരി, Koode അവസാനിപ്പിച്ചു. നന്ദി!', true);
+    panel.log('session ended (exit)');
+    if (!opts.keepOpen) setTimeout(() => { if (!S.active) panel.close(); }, opts.voice ? 2500 : 1200);
   }
 
   function retryVoice() {
@@ -340,13 +430,68 @@
     plan({ type: 'goal_set' });
   }
 
-  function resume(task) {
+  // A page opened on request: wait until it is ready (and the user has logged in, on WhatsApp), then
+  // continue the carried-over goal, or just report that the site is open.
+  async function resume(task) {
     Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0, rateRetries: 0 });
-    panel.open();
+    const my = ++S.token;
+    let sidePanel = false;
+    try { sidePanel = !!(await send({ type: 'koode:panelOpen' })).open; } catch (_) {}
+    // With the side panel open, the in-page card stays minimised (the arrow carries the instruction).
+    // Without a follow-up goal the next request is typed here, so the input takes focus.
+    if (!sidePanel) panel.open({ noFocus: !!task.goal });
     panel.setGoal(task.goal);
     panel.log('resumed after page load');
+    if (task.fresh) { task.fresh = false; persist(); panel.log('request carried over from the companion panel'); }
+    panel.setState('loading');
+    panel.setInstruction({ ml: 'പേജ് തുറക്കുന്നു, ഒരു നിമിഷം…', en: 'Waiting for the page to finish loading…' });
+    const r = await K.ready.wait({
+      cancelled: () => my !== S.token,
+      onLogin: () => {
+        // The QR code must stay fully visible: with the side panel open the instruction is shown there;
+        // otherwise the in-page card moves away from the QR code.
+        if (!sidePanel) {
+          panel.open({ noFocus: true });
+          const qr = Array.from(document.querySelectorAll('canvas, [data-ref], [data-testid*=qrcode]')).find((el) => extractor.isRendered(el));
+          const box = qr && (qr.closest('[data-ref]') || qr).getBoundingClientRect();
+          if (box) panel.avoid({ left: box.left - 40, top: box.top - 40, right: box.right + 40, bottom: box.bottom + 40, width: box.width + 80, height: box.height + 80 });
+        }
+        panel.setState('login');
+        const ml = 'ആദ്യം WhatsApp-ൽ ലോഗിൻ ചെയ്യൂ: ഫോണിൽ WhatsApp തുറന്ന് "Linked devices" വഴി ഈ QR കോഡ് സ്കാൻ ചെയ്യൂ. ഞാൻ കാത്തിരിക്കാം.';
+        panel.setInstruction({ ml, en: 'Log in to WhatsApp first: on your phone open WhatsApp → Linked devices and scan this QR code. I will wait.' });
+        say(ml);
+        progress({ login: true });
+      }
+    });
+    if (my !== S.token) return;
+    panel.log(`page ready check: ${r.reason} after ${r.waitedMs}ms`);
+    if (!r.ok) return fail('WhatsApp login was not completed. Ask again when you are logged in.', 'WhatsApp ലോഗിൻ പൂർത്തിയായില്ല. ലോഗിൻ ചെയ്ത ശേഷം വീണ്ടും പറയൂ.');
+    if (r.reason === 'timeout') {
+      // The site's own interface never appeared (e.g. an unsupported-browser or error page): don't claim it is ready.
+      S.active = false;
+      persist();
+      const site = here();
+      panel.open({ noFocus: true });
+      panel.setState('error');
+      const ml = `${site?.ml || site?.name || 'പേജ്'} ശരിയായി തുറന്നില്ല. പേജിൽ എന്താണ് കാണിക്കുന്നതെന്ന് നോക്കൂ, അല്ലെങ്കിൽ റീലോഡ് ചെയ്യൂ.`;
+      panel.setInstruction({ ml, en: `${site?.name || 'The page'} did not finish loading (it may be showing a message). Check the page or reload it.` });
+      say(ml);
+      progress({ notReady: true });
+      return;
+    }
+    if (!task.goal) {
+      // Opened without a follow-up goal: the site is ready; wait for the user's next request.
+      S.active = false;
+      persist();
+      const site = here();
+      panel.setState('idle');
+      const ml = `${site?.ml || site?.name || 'പേജ്'} തുറന്നു. ഇനി എന്താണ് ചെയ്യേണ്ടത്?`;
+      panel.setInstruction({ ml, en: `${site?.name || 'The page'} is open. What would you like to do next?` });
+      say(ml);
+      progress({ arrived: true });
+      return;
+    }
     const p = task.pending;
-    if (task.fresh) { task.fresh = false; persist(); panel.log('goal carried over from the companion panel'); }
     if (p && p.type === 'navigation') {
       if (location.href !== p.from) {
         if (p.on_target) record({ target_label: p.target_label, outcome: 'verified', action: 'click', evidence: 'navigation' });
@@ -362,6 +507,7 @@
     S.voiceToken = (S.voiceToken || 0) + 1;
     voice.hush();
     S.active = false;
+    S.snapHref = null;
     S.target = null;
     monitor.stop();
     overlay.clear();
@@ -391,5 +537,5 @@
     say(S.lastPlan.instruction_ml);
   }
 
-  K.controller = { start, stop, resume, repeat, micDown, micUp, confirmVoice, retryVoice, state: S };
+  K.controller = { start, route, exit, stop, resume, repeat, micDown, micUp, confirmVoice, retryVoice, state: S };
 })();

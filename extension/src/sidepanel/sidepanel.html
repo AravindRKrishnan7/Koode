@@ -2,38 +2,82 @@
 <html lang="ml">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Koode — കൂടെ</title>
 <style>
-  body { margin: 0; font-family: "Noto Sans Malayalam","Noto Sans",system-ui,sans-serif; color: #1f2340; background: #fffdf9; }
+  :root { --ink: #1f2340; --muted: #59607f; --line: #e2d6c8; --orange: #ff6a00; --bg: #fffdf9; }
+  body { margin: 0; font-family: "Noto Sans Malayalam","Noto Sans",system-ui,sans-serif; color: var(--ink); background: var(--bg); }
   header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: linear-gradient(135deg,#1f2340,#38407a); color: #fff; }
   header b { font-size: 16px; } header .pill { margin-left: auto; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.18); }
-  main { padding: 12px 14px; }
-  .where { font-size: 12px; color: #59607f; margin-bottom: 8px; }
-  .ml { font-size: 16px; font-weight: 600; line-height: 1.5; } .en { font-size: 13px; color: #59607f; margin-top: 4px; }
-  .notice { font-size: 12px; background: #fef0c7; color: #7a4b16; border-radius: 8px; padding: 6px 9px; margin-top: 8px; }
+  header .speak { display: none; } body.speaking header .speak { display: inline; animation: blink .8s ease-in-out infinite; }
+  body[data-koode-state=listening] header .pill { background: #d92d20; }
+  body[data-koode-state=confirm] header .pill, body[data-koode-state=transcribing] header .pill, body[data-koode-state=finding] header .pill, body[data-koode-state=loading] header .pill { background: #3b5bdb; }
+  body[data-koode-state=waiting] header .pill { background: var(--orange); }
+  body[data-koode-state=done] header .pill, body[data-koode-state=verified] header .pill { background: #12b76a; }
+  body[data-koode-state=ended] header { background: linear-gradient(135deg,#067647,#12b76a); }
+  main { padding: 12px 14px 18px; }
+  .where { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .ml { font-size: 17px; font-weight: 600; line-height: 1.55; } .en { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .notice { font-size: 12.5px; background: #fef0c7; color: #7a4b16; border-radius: 8px; padding: 7px 9px; margin-top: 8px; }
+  .notice button { margin-top: 6px; border: 1px solid #f0c27b; background: #fff; border-radius: 8px; padding: 6px 10px; font: 700 12.5px inherit; cursor: pointer; }
+  .mock { color: #b42318; font-weight: 700; font-size: 11px; margin-top: 6px; }
+  .talk { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 16px 0 6px; }
+  .mic { width: 84px; height: 84px; border-radius: 50%; border: none; cursor: pointer; color: #fff; background: radial-gradient(circle at 30% 30%, #ffa45c, #ff6a00);
+    box-shadow: 0 8px 22px rgba(255,106,0,.4); display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
+  .mic.on { background: #d92d20; box-shadow: 0 0 0 6px rgba(217,45,32,.25); animation: ring 1s ease-in-out infinite; }
+  .mic.unavail { opacity: .45; }
+  .mic:focus-visible { outline: 3px solid #ffa45c; outline-offset: 3px; }
+  .talk small { font-size: 12px; color: var(--muted); text-align: center; }
+  .meter { width: 160px; height: 6px; border-radius: 3px; background: #f1e3d3; overflow: hidden; visibility: hidden; }
+  body[data-koode-state=listening] .meter { visibility: visible; }
+  .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg,#12b76a,#f79009,#d92d20); transition: width .08s; }
+  @keyframes ring { 50% { box-shadow: 0 0 0 10px rgba(217,45,32,.12); } }
+  @keyframes blink { 50% { opacity: .25; } }
+  .confirm { margin-top: 10px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 10px; }
+  .confirm .heard { font-size: 17px; font-weight: 700; margin: 2px 0 4px; word-break: break-word; }
+  .confirm .hint { font-size: 11.5px; color: var(--muted); }
+  .confirm .btns { display: flex; gap: 6px; margin-top: 8px; }
+  .confirm button { flex: 1; border-radius: 9px; padding: 9px 6px; font: 700 13px inherit; cursor: pointer; border: 1px solid #c7d2fe; background: #fff; color: var(--ink); }
+  .confirm button.yes { background: #12b76a; border-color: #12b76a; color: #fff; }
   form { display: flex; gap: 6px; margin-top: 12px; }
-  input { flex: 1; min-width: 0; border: 1.5px solid #e2d6c8; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; }
+  input { flex: 1; min-width: 0; border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; }
   button { border-radius: 10px; font: 700 13px inherit; cursor: pointer; }
-  .go { border: none; background: #ff6a00; color: #fff; padding: 0 14px; }
-  .row { display: flex; gap: 6px; margin-top: 8px; } .row button { flex: 1; border: 1px solid #e2d6c8; background: #fff; padding: 7px; }
-  .sites { margin-top: 14px; font-size: 12px; color: #59607f; } .sites button { margin: 4px 4px 0 0; border: 1px solid #c7d2fe; background: #eef2ff; padding: 5px 9px; font-weight: 600; }
-  ol { font-size: 11px; color: #59607f; padding-left: 18px; max-height: 160px; overflow: auto; }
-  .hidden { display: none; }
+  .go { border: none; background: var(--orange); color: #fff; padding: 0 14px; }
+  .row { display: flex; gap: 6px; margin-top: 8px; } .row button { flex: 1; border: 1px solid var(--line); background: #fff; padding: 8px; }
+  .sites { margin-top: 14px; font-size: 12px; color: var(--muted); } .sites button { margin: 4px 4px 0 0; border: 1px solid #c7d2fe; background: #eef2ff; padding: 5px 9px; font-weight: 600; }
+  details { margin-top: 12px; } ol { font-size: 11px; color: var(--muted); padding-left: 18px; max-height: 160px; overflow: auto; }
+  .hidden { display: none !important; }
 </style>
 </head>
-<body>
-  <header><b>Koode</b><span>കൂടെ</span><span class="pill" id="pill">Ready</span></header>
+<body data-koode-state="idle">
+  <header><b>Koode</b><span>കൂടെ</span><span class="speak" title="Speaking">🔊</span><span class="pill" id="pill">Ready</span></header>
   <main>
     <div class="where" id="where">–</div>
-    <div class="ml" id="ml">എന്താണ് ചെയ്യേണ്ടത്? ഏത് വെബ്സൈറ്റ് തുറക്കണം എന്ന് പറയൂ.</div>
-    <div class="en" id="en">What would you like to do? e.g. “Open WhatsApp Web” or “Open YouTube and find a Google Forms tutorial”.</div>
+    <div class="ml" id="ml">എന്താണ് ചെയ്യേണ്ടത്? മൈക്ക് അമർത്തിപ്പിടിച്ച് മലയാളത്തിൽ പറയൂ.</div>
+    <div class="en" id="en">What would you like to do? Hold the mic and speak, e.g. “വാട്സ്ആപ്പ് തുറക്കൂ”.</div>
     <div class="notice hidden" id="notice"></div>
-    <form id="f"><input id="goal" placeholder="e.g. Open YouTube" aria-label="Your request"><button class="go" type="submit">Go</button></form>
-    <div class="row"><button id="end" type="button">End session</button></div>
-    <div class="sites">Supported websites: <span id="sitelist"></span></div>
+    <div class="talk">
+      <button class="mic" id="mic" type="button" title="Hold to speak (Malayalam)" aria-label="Hold to speak">
+        <svg viewBox="0 0 24 24" width="38" height="38" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+      <div class="meter"><i id="level"></i></div>
+      <small>അമർത്തിപ്പിടിച്ച് പറയൂ, പറഞ്ഞു കഴിഞ്ഞ് വിടൂ · Hold, speak, release</small>
+    </div>
+    <div class="confirm hidden" id="confirm">
+      <div class="hint">ഞാൻ കേട്ടത് · I heard:</div>
+      <div class="heard" id="heard"></div>
+      <div class="hint">തെറ്റുണ്ടെങ്കിൽ താഴെ തിരുത്തൂ · Wrong? Edit it below, or say it again.</div>
+      <div class="btns"><button class="yes" id="yes" type="button">✓ ശരി, തുടങ്ങാം</button><button id="again" type="button">🎤 വീണ്ടും പറയാം</button></div>
+    </div>
+    <form id="f"><input id="goal" placeholder="e.g. വാട്സ്ആപ്പ് തുറക്കൂ / Open YouTube" aria-label="Your request"><button class="go" type="submit">Go</button></form>
+    <div class="row"><button id="end" type="button">Exit · അവസാനിപ്പിക്കൂ</button></div>
+    <div class="mock hidden" id="mock"></div>
+    <div class="sites">Open: <span id="sitelist"></span></div>
     <details><summary style="font-size:11px">Session log</summary><ol id="log"></ol></details>
   </main>
   <script src="../shared/sites.js"></script>
+  <script src="init.js"></script>
+  <script src="../content/voice.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

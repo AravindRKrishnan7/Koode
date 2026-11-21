@@ -1,19 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Koode — കൂടെ",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Screen-aware guide: points to the right control, waits for you to act, and verifies each step.",
+  "minimum_chrome_version": "116",
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
     "sidePanel",
     "tabs"
   ],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://docs.google.com/forms/*",
+    "https://docs.google.com/forms/*viewform*",
+    "https://docs.google.com/forms/*formResponse*",
     "https://web.whatsapp.com/*",
     "https://www.youtube.com/*"
   ],
@@ -28,9 +28,13 @@
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*",
-        "https://docs.google.com/forms/*",
+        "https://docs.google.com/forms/*viewform*",
+        "https://docs.google.com/forms/*formResponse*",
         "https://web.whatsapp.com/*",
         "https://www.youtube.com/*"
+      ],
+      "exclude_matches": [
+        "https://docs.google.com/forms/*/edit*"
       ],
       "js": [
         "src/shared/constants.js",
@@ -38,6 +42,7 @@
         "src/content/extractor.js",
         "src/content/overlay.js",
         "src/content/monitor.js",
+        "src/content/ready.js",
         "src/content/voice.js",
         "src/content/panel.js",
         "src/content/controller.js",

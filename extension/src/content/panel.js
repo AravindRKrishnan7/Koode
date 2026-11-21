@@ -8,7 +8,8 @@
 
   const STATE_LABEL = {
     idle: 'Ready', listening: 'Listening…', transcribing: 'Understanding…', confirm: 'Is this right?', finding: 'Finding…', waiting: 'Your turn',
-    verifying: 'Checking…', verified: 'Verified ✓', recovering: 'Let’s fix that', done: 'Done ✓', error: 'Problem', stopped: 'Stopped'
+    verifying: 'Checking…', verified: 'Verified ✓', recovering: 'Let’s fix that', done: 'Done ✓', error: 'Problem', stopped: 'Stopped',
+    loading: 'Loading…', login: 'Log in first', ended: 'Ended'
   };
 
   const CSS = `
@@ -135,7 +136,9 @@
     setState('idle');
   }
 
-  function open() { els.card.classList.remove('hidden'); els.launcher.classList.add('hidden'); host.dataset.koodeOpen = 'true'; els.input.focus(); micRect(); }
+  function open(opts = {}) { els.card.classList.remove('hidden'); els.launcher.classList.add('hidden'); host.dataset.koodeOpen = 'true'; if (!opts.noFocus) els.input.focus(); micRect(); }
+  // Exit: hide the card and any pending confirmation; the launcher bubble stays for a new session.
+  function close() { hideConfirm(); els.input.value = ''; els.card.classList.add('hidden'); els.launcher.classList.remove('hidden'); host.dataset.koodeOpen = 'false'; }
 
   function submit() {
     const g = els.input.value.trim();
@@ -226,8 +229,8 @@
     if (targetLabel !== undefined) host.dataset.koodeTarget = targetLabel || '';
   }
 
-  function setPlanner(name, isMock) {
-    els.badge.textContent = isMock ? 'MOCK test harness (not AI)' : 'model: ' + name;
+  function setPlanner(name, isMock, isRule) {
+    els.badge.textContent = isMock ? 'MOCK test harness (not AI)' : isRule ? name : 'model: ' + name;
     els.badge.classList.toggle('mock', !!isMock);
     host.dataset.koodePlanner = name;
   }
@@ -261,6 +264,6 @@
     els.wrap.classList.toggle('top', before[1]);
   }
 
-  K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid, releaseMic, setVoiceInfo,
+  K.panel = { init, open, close, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid, releaseMic, setVoiceInfo,
     confirmTranscript, setVoiceAvailable, setLevel, setSpeaking, setNotice, focusInput };
 })();

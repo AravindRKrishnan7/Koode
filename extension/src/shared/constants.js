@@ -4,10 +4,15 @@
   const K = (globalThis.Koode = globalThis.Koode || {});
   if (K.started) return; // already injected on this page
   K.constants = {
-    MAX_CANDIDATES: 150,
+    // Planner payload budget (Groq free tier: 8k tokens/min). Small pages are unaffected; heavy pages
+    // (YouTube) keep what is on screen first and only a few off-screen controls.
+    MAX_CANDIDATES: 90,
+    MAX_OFFSCREEN: 20,
+    MAX_SAME_LABEL: 2,
+    MAX_SNAPSHOT_LABEL: 64,
     MAX_LABEL: 80,
-    MAX_CONTEXT: 20,
-    MAX_CONTEXT_TEXT: 120,
+    MAX_CONTEXT: 12,
+    MAX_CONTEXT_TEXT: 100,
     MAX_STEPS: 25,
     MAX_INVALID_TARGET_RETRIES: 2,
     CLICK_EVIDENCE_TIMEOUT_MS: 2500,

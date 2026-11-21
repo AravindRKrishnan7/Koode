@@ -71,7 +71,9 @@
   }
 
   // cb: { verified(evidence), wrong(info), noChange(), invalid(info), navigating() }
-  function watch(target, cb) {
+  // opts.fillIdleMs: also accept a fill once typing pauses (search boxes whose results the user picks
+  // from a private area, e.g. WhatsApp contacts), instead of waiting for change/blur.
+  function watch(target, cb, opts = {}) {
     stop();
     const kind = actionKind(target.el);
     const initialChecked = kind === 'check' ? isChecked(target.el) : null;
@@ -143,6 +145,15 @@
     };
     on('change', fillCheck);
     on('focusout', fillCheck);
+    if (kind === 'fill' && opts.fillIdleMs) {
+      let idle = 0;
+      on('input', (e) => {
+        if (!e.isTrusted || !isOnTarget(e.target, target)) return;
+        clearTimeout(idle);
+        idle = setTimeout(() => fillCheck({ isTrusted: true, target: target.el }), opts.fillIdleMs);
+      });
+      st.cleanup.push(() => clearTimeout(idle));
+    }
 
     on('change', (e) => {
       if (!e.isTrusted || !isOnTarget(e.target, target)) return;

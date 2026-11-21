@@ -262,12 +262,28 @@
     return c;
   }
 
+  // Token budget: keep every control on a small page. On heavy pages drop what the planner can't use
+  // (unlabelled links/generic elements, the 3rd+ copy of the same control), then keep on-screen
+  // controls first and at most MAX_OFFSCREEN below the fold. Text fields are always kept.
   function prioritise(items) {
-    if (items.length <= C.MAX_CANDIDATES) return items;
-    const inView = items.filter((i) => { const r = i.anchor.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; });
-    const rest = items.filter((i) => !inView.includes(i));
-    const keep = new Set(inView.concat(rest).slice(0, C.MAX_CANDIDATES));
-    return items.filter((i) => keep.has(i));
+    if (items.length <= 40) return items;
+    const seen = new Map();
+    const useful = items.filter((i) => {
+      const role = implicitRole(i.el);
+      const label = labelFor(i.el);
+      if (isTextEntry(i.el) || i.el.tagName.toLowerCase() === 'select') return true;
+      if (!label && (role === 'link' || role === 'generic' || role === 'img')) return false;
+      const key = role + '|' + label + '|' + (sectionFor(i.el) || '');
+      const n = (seen.get(key) || 0) + 1;
+      seen.set(key, n);
+      return n <= C.MAX_SAME_LABEL;
+    });
+    const inView = (i) => { const r = i.anchor.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
+    const on = useful.filter(inView);
+    const off = useful.filter((i) => !inView(i));
+    const keep = new Set(on.slice(0, C.MAX_CANDIDATES));
+    for (const i of off) { if (keep.size >= C.MAX_CANDIDATES || keep.size - on.length >= C.MAX_OFFSCREEN) break; keep.add(i); }
+    return items.filter((i) => keep.has(i)); // document order
   }
 
   // Builds a new snapshot; previous IDs become stale immediately.
@@ -279,7 +295,9 @@
     const candidates = items.map((item, i) => {
       const id = currentSnapshotId + '_' + (i + 1);
       registry.set(id, item);
-      return { id, ...describe(item.el, item.anchor) };
+      const d = describe(item.el, item.anchor);
+      d.label = clean(d.label, C.MAX_SNAPSHOT_LABEL);
+      return { id, ...d };
     });
     return {
       snapshot_id: currentSnapshotId,
