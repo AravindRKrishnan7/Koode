@@ -20,7 +20,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 
 function send(res, status, body, headers = {}) {
   const isObj = typeof body === 'object' && !Buffer.isBuffer(body);
-  res.writeHead(status, { 'Content-Type': isObj ? 'application/json' : 'text/plain', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', ...headers });
+  res.writeHead(status, { 'Content-Type': isObj ? 'application/json' : 'text/plain', ...headers });
   res.end(isObj ? JSON.stringify(body) : body);
 }
 
@@ -58,6 +58,10 @@ function serveStatic(req, res, urlPath) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204, '');
+  // The APIs spend the operator's model and speech quota: only the extension (or a local
+  // non-browser client, which sends no Origin) may call them; web pages get 403.
+  const origin = req.headers.origin;
+  if (url.pathname.startsWith('/api/') && origin && !origin.startsWith('chrome-extension://')) return send(res, 403, { error: 'forbidden origin' });
   if (url.pathname === '/health') return send(res, 200, { ok: true, provider: cfg.provider, model: cfg.model, mock: cfg.provider === 'mock', voice: !!cfg.keys.sarvam });
   if (url.pathname === '/' ) return send(res, 302, '', { Location: '/demo/' });
   if (url.pathname.startsWith('/demo')) return serveStatic(req, res, url.pathname);
