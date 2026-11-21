@@ -374,7 +374,7 @@
       return plan(S.lastEvent);
     }
     if (!S.target || !S.lastPlan) return;
-    if (S.paused) { voice.hush(); guiding(); return; } // abandons a pending voice request and resumes the step
+    if (S.paused) { S.voiceToken = (S.voiceToken || 0) + 1; voice.hush(); guiding(); return; } // abandons a pending voice request and resumes the step
     const v = extractor.resolve(S.target.id);
     if (!v.ok) return plan({ type: 'target_lost', label: S.target.info.label });
     const r = S.target;
