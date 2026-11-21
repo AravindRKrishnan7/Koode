@@ -35,8 +35,9 @@
     form { display: flex; gap: 6px; margin-top: 12px; }
     input { flex: 1; min-width: 0; border: 1.5px solid #e2d6c8; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; outline: none; }
     input:focus { border-color: #ff7a1a; }
-    button.mic { border: 1.5px solid #e2d6c8; border-radius: 10px; width: 40px; font-size: 18px; background: #fff; cursor: pointer; touch-action: none; user-select: none; }
-    button.mic.on { background: #d92d20; border-color: #d92d20; box-shadow: 0 0 0 4px rgba(217,45,32,.25); }
+    button.mic { border: 1.5px solid #e2d6c8; border-radius: 10px; width: 40px; background: #fff; color: #1f2340; cursor: pointer; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; }
+    button.mic.on { background: #d92d20; border-color: #d92d20; color: #fff; box-shadow: 0 0 0 4px rgba(217,45,32,.25); animation: ring 1s ease-in-out infinite; }
+    @keyframes ring { 50% { box-shadow: 0 0 0 8px rgba(217,45,32,.12); } }
     button.go { border: none; border-radius: 10px; padding: 0 14px; font: 700 14px inherit; color: #fff; background: #ff6a00; cursor: pointer; }
     .row { display: flex; gap: 6px; margin-top: 8px; }
     .row button { flex: 1; border: 1px solid #e2d6c8; background: #fff; border-radius: 9px; padding: 6px; font: 600 12px inherit; cursor: pointer; color: #1f2340; }
@@ -93,7 +94,7 @@
               <div class="hint">തെറ്റുണ്ടെങ്കിൽ താഴെ തിരുത്തൂ · Wrong? Edit it below, or say it again.</div>
               <div class="btns"><button class="yes" type="button">✓ ശരി, തുടങ്ങാം</button><button class="again" type="button">🎤 വീണ്ടും പറയാം</button></div>
             </div>
-            <form><input placeholder="e.g. Help me fill this form" aria-label="Your goal" /><button class="mic" type="button" title="Hold to speak (Malayalam)" aria-label="Hold to speak">🎤</button><button class="go" type="submit">Guide</button></form>
+            <form><input placeholder="e.g. Help me fill this form" aria-label="Your goal" /><button class="mic" type="button" title="Hold to speak (Malayalam)" aria-label="Hold to speak"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button><button class="go" type="submit">Guide</button></form>
             <div class="row"><button class="repeat" type="button">Repeat</button><button class="stop" type="button">Stop</button></div>
             <div class="meta"><span class="step">Step –</span><span class="badge">planner: –</span></div>
             <details><summary>Trace</summary><ol class="trace"></ol></details>
