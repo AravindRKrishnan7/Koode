@@ -236,9 +236,17 @@
   };
   const STT_GENERIC = ['ക്ഷമിക്കണം, മനസ്സിലായില്ല. ഒന്നുകൂടി പറയൂ, അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യൂ.', "Sorry, I didn't catch that. Try again or type your request."];
 
+  // A failed or abandoned voice attempt during guidance keeps the current step on screen.
+  function guiding() {
+    if (!S.active || !S.target || !S.lastPlan) return false;
+    panel.setState('waiting');
+    panel.setInstruction({ ml: S.lastPlan.instruction_ml, en: S.lastPlan.instruction_en, explain: S.lastPlan.explanation_ml });
+    return true;
+  }
+
   function voiceProblem([ml, en], detail) {
-    panel.setState('idle');
-    panel.setInstruction({ ml, en });
+    if (guiding()) panel.setNotice(ml + ' · ' + en);
+    else { panel.setState('idle'); panel.setInstruction({ ml, en }); }
     panel.setVoiceInfo({ error: detail });
     panel.log('voice fallback: ' + detail);
     panel.focusInput();
@@ -246,7 +254,7 @@
 
   async function micDown() {
     voice.hush();
-    if (S.active) stop(true); // a new spoken request replaces the current task
+    S.voiceToken = (S.voiceToken || 0) + 1; // the current task continues until a new goal is confirmed
     try {
       await voice.start();
     } catch (e) {
@@ -260,10 +268,11 @@
 
   async function micUp() {
     if (!voice.isRecording()) return;
-    const my = S.token; // Stop (or a new goal) while transcribing cancels this voice request
+    const my = S.voiceToken; // Stop (or a new goal) while transcribing cancels this voice request
     const clip = await voice.stop();
-    if (my !== S.token) return;
+    if (my !== S.voiceToken) return;
     if (!clip) {
+      if (guiding()) return;
       panel.setState('idle');
       panel.setInstruction({ ml: 'ബട്ടൺ അമർത്തിപ്പിടിച്ചുകൊണ്ട് സംസാരിക്കൂ, പറഞ്ഞു കഴിഞ്ഞ് വിടൂ.', en: 'Hold the mic button while you speak, then release it.' });
       return;
@@ -274,7 +283,7 @@
     let resp;
     try { resp = await voice.transcribe(clip); } catch (e) { resp = { error: String(e && e.message || e) }; }
     const ms = Math.round(performance.now() - t0);
-    if (my !== S.token) return;
+    if (my !== S.voiceToken) return;
     panel.setVoiceInfo({ sttMs: ms, audioMs: clip.ms, peak: clip.peak });
     if (!resp || resp.error) {
       if (resp && resp.code === 'not_configured') panel.setVoiceAvailable(false, 'not configured on the server');
@@ -299,6 +308,7 @@
 
   function retryVoice() {
     voice.hush();
+    if (guiding()) return;
     panel.setState('idle');
     panel.setInstruction({ ml: '🎤 അമർത്തിപ്പിടിച്ച് ഒന്നുകൂടി പറയൂ.', en: 'Hold 🎤 and say it again.' });
   }
@@ -331,6 +341,7 @@
 
   function stop(silent) {
     S.token += 1;
+    S.voiceToken = (S.voiceToken || 0) + 1;
     voice.hush();
     S.active = false;
     S.target = null;
