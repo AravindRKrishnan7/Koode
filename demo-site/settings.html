@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ShopEasy — My account</title><link rel="stylesheet" href="style.css">
+<style>
+  body.dark { background: #12151d; color: #e6e9f2; }
+  body.dark main, body.dark .drawer { background: #1c2130; color: #e6e9f2; }
+  .iconbtn { background: none; border: none; color: #fff; font-size: 22px; padding: 4px 8px; cursor: pointer; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; background: #fff; box-shadow: -6px 0 24px rgba(0,0,0,.18); padding: 20px; z-index: 50; }
+  .drawer[hidden] { display: none; }
+  .tabs { display: flex; gap: 6px; margin: 14px 0; flex-wrap: wrap; }
+  .tabs button[aria-selected=true] { background: #0f4c81; color: #fff; border-color: #0f4c81; }
+  .opt { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #dde2ec; border-radius: 8px; margin-bottom: 8px; }
+  .switch { width: 52px; height: 28px; border-radius: 14px; background: #c8cfdc; border: none; position: relative; padding: 0; }
+  .switch[aria-checked=true] { background: #2e7d32; }
+  .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch[aria-checked=true]::after { left: 27px; }
+  .products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .products div { border: 1px solid #dde2ec; border-radius: 8px; padding: 14px; font-size: 14px; }
+</style></head>
+<body>
+<div class="banner">Demo environment — fictional shop. Nothing here is real.</div>
+<nav class="topbar" id="topbar"><span class="brand">ShopEasy</span><a href="#">Deals</a><a href="#">Orders</a><a href="#">Help</a></nav>
+<main>
+  <h1>Hello, Guest</h1>
+  <p class="sub">Your recent orders and recommendations.</p>
+  <div class="products"><div>Steel tiffin box<br><b>₹349</b></div><div>Umbrella<br><b>₹299</b></div><div>Reading glasses<br><b>₹199</b></div></div>
+  <p id="theme-status" role="status" class="sub" style="margin-top:20px"></p>
+</main>
+<aside class="drawer" id="drawer" role="dialog" aria-labelledby="drawer-title" hidden>
+  <h2 id="drawer-title"></h2>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div id="panel" role="tabpanel"></div>
+  <button id="close-drawer" style="margin-top:16px">Close</button>
+</aside>
+<script>
+// Two layouts with different structure and wording; the same Koode engine must handle both.
+const layoutB = new URLSearchParams(location.search).get('layout') === 'b';
+const L = layoutB
+  ? { open: { text: '☰', label: 'Menu' }, title: 'Preferences', tabs: ['Account', 'Display', 'Alerts', 'Security'], themeTab: 'Display', control: 'switch' }
+  : { open: { text: '⚙', label: 'Settings' }, title: 'Settings', tabs: ['Profile', 'Notifications', 'Appearance', 'Privacy'], themeTab: 'Appearance', control: 'radio' };
+
+const topbar = document.getElementById('topbar');
+const openBtn = document.createElement('button');
+openBtn.className = 'iconbtn'; openBtn.textContent = L.open.text; openBtn.setAttribute('aria-label', L.open.label); openBtn.setAttribute('aria-expanded', 'false');
+layoutB ? topbar.insertBefore(openBtn, topbar.firstChild) : topbar.appendChild(openBtn);
+
+const drawer = document.getElementById('drawer');
+document.getElementById('drawer-title').textContent = L.title;
+const tabs = document.getElementById('tabs'), panel = document.getElementById('panel');
+
+function setDark(on) {
+  document.body.classList.toggle('dark', on);
+  document.getElementById('theme-status').textContent = on ? (layoutB ? 'Night mode is on.' : 'Dark theme is on.') : '';
+}
+
+function renderTab(name) {
+  [...tabs.children].forEach((b) => b.setAttribute('aria-selected', String(b.textContent === name)));
+  panel.innerHTML = '';
+  if (name !== L.themeTab) { panel.innerHTML = `<p class="sub">${name} options would appear here.</p><label class="opt"><input type="checkbox"> Email me about offers</label>`; return; }
+  if (L.control === 'radio') {
+    panel.innerHTML = `<fieldset><legend>Theme</legend>
+      <label class="opt"><input type="radio" name="theme" value="light" checked> Light</label>
+      <label class="opt"><input type="radio" name="theme" value="dark"> Dark</label>
+      <label class="opt"><input type="radio" name="theme" value="system"> Use device setting</label></fieldset>
+      <div class="field"><label for="ts">Text size</label><select id="ts"><option>Normal</option><option>Large</option></select></div>`;
+    panel.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = (r.value === 'dark') === document.body.classList.contains('dark') && (r.value !== 'system'); r.addEventListener('change', () => setDark(r.value === 'dark')); });
+  } else {
+    panel.innerHTML = `<div class="opt"><span style="flex:1">Large text</span><button class="switch" role="switch" aria-checked="false" aria-label="Large text"></button></div>
+      <div class="opt"><span style="flex:1" id="nm">Night mode</span><button class="switch" role="switch" aria-labelledby="nm" aria-checked="${document.body.classList.contains('dark')}"></button></div>`;
+    panel.querySelectorAll('.switch').forEach((s) => s.addEventListener('click', () => {
+      const on = s.getAttribute('aria-checked') !== 'true'; s.setAttribute('aria-checked', String(on));
+      if (s.getAttribute('aria-labelledby') === 'nm') setDark(on);
+    }));
+  }
+}
+L.tabs.forEach((t) => { const b = document.createElement('button'); b.textContent = t; b.setAttribute('role', 'tab'); b.addEventListener('click', () => renderTab(t)); tabs.appendChild(b); });
+openBtn.addEventListener('click', () => { const open = drawer.hidden; drawer.hidden = !open; openBtn.setAttribute('aria-expanded', String(open)); if (open) renderTab(L.tabs[0]); });
+document.getElementById('close-drawer').addEventListener('click', () => { drawer.hidden = true; openBtn.setAttribute('aria-expanded', 'false'); });
+</script>
+</body></html>

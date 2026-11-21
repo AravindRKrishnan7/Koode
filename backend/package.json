@@ -1,0 +1,12 @@
+{
+  "name": "koode-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Koode grounded step planner + demo-site static server (no runtime dependencies).",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test ../tests/unit/"
+  },
+  "engines": { "node": ">=20" }
+}

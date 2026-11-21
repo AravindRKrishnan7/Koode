@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Senior Citizen Travel Card — Application (demo)</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="banner">Demo environment — fictional application. Do not enter real personal data.</div>
+<nav class="topbar"><span class="brand">KeralaGo Transport</span><a href="index.html">Home</a><a href="#help">Help</a><a href="#contact">Contact us</a></nav>
+<main>
+  <h1>Senior Citizen Travel Card — Application</h1>
+  <p class="sub">Fields marked * are mandatory.</p>
+  <form id="app" novalidate>
+    <div class="field"><label for="fullname">Full name (as per ID) *</label><input id="fullname" name="fullname" type="text" required autocomplete="off"></div>
+    <div class="field"><label for="dob">Date of birth *</label><input id="dob" name="dob" type="date" required><div class="hint">You must be 60 or older.</div></div>
+    <div class="field"><label for="mobile">Mobile number *</label><input id="mobile" name="mobile" type="tel" required pattern="[6-9][0-9]{9}" maxlength="10" placeholder="10-digit mobile number"></div>
+    <div class="field"><label for="district">District *</label>
+      <select id="district" name="district" required>
+        <option value="">-- Select district --</option>
+        <option>Alappuzha</option><option>Ernakulam</option><option>Kottayam</option><option>Kozhikode</option><option>Thiruvananthapuram</option><option>Thrissur</option>
+      </select></div>
+    <fieldset><legend>Card type *</legend>
+      <label class="radio"><input type="radio" name="cardtype" value="bus" required> KSRTC Bus</label>
+      <label class="radio"><input type="radio" name="cardtype" value="ferry" required> Water Metro / Ferry</label>
+    </fieldset>
+    <div class="spacer">(scroll down)</div>
+    <div class="field"><label for="pw">Create account password *</label><input id="pw" name="pw" type="password" required autocomplete="new-password"></div>
+    <div class="field"><label><input id="agree" type="checkbox" required> I declare that the information given is true *</label></div>
+    <div class="actions"><button type="button" id="clear">Clear form</button><button type="submit" class="primary" id="submit">Submit application</button></div>
+    <p id="err" role="alert" style="color:#b42318"></p>
+  </form>
+  <div id="done" class="success" role="status" hidden></div>
+</main>
+<script>
+  const form = document.getElementById('app');
+  document.getElementById('clear').addEventListener('click', () => { form.reset(); document.getElementById('err').textContent = ''; });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!form.checkValidity()) {
+      const bad = [...form.elements].find((el) => el.willValidate && !el.checkValidity());
+      document.getElementById('err').textContent = 'Please complete: ' + (bad.labels?.[0]?.textContent.trim() || bad.name);
+      return;
+    }
+    form.hidden = true;
+    const done = document.getElementById('done');
+    done.hidden = false;
+    done.textContent = 'Application submitted successfully. Reference number KG-' + Math.floor(100000 + Math.random() * 899999) + '.';
+  });
+</script>
+</body></html>
