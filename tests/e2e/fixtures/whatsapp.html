@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>WhatsApp</title>
+<!-- TEST FIXTURE served by tests/e2e/journey.mjs at https://web.whatsapp.com/ via request interception.
+     Not WhatsApp: a structural stand-in (ids #side, #pane-side, #main) with fake chats, used to prove that
+     Koode guides only to the search box and never reads chat names or messages. -->
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f0f2f5; }
+  #fixture { background: #fde68a; padding: 4px 8px; font-size: 12px; }
+  #login { display: flex; gap: 40px; padding: 60px; }
+  #app { display: none; height: calc(100vh - 24px); }
+  #side { width: 360px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  #side header { padding: 10px; display: flex; gap: 8px; }
+  .search { margin: 0 10px 8px; padding: 8px 10px; background: #f0f2f5; border-radius: 8px; min-height: 20px; outline: none; }
+  .search:empty::before { content: attr(data-placeholder); color: #667781; }
+  #pane-side { overflow: auto; flex: 1; }
+  .chat { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #main .msgs { flex: 1; padding: 20px; }
+  #main footer { padding: 10px; background: #f0f2f5; }
+  #main footer div { background: #fff; padding: 10px; border-radius: 8px; }
+</style></head>
+<body>
+<div id="fixture">Koode test fixture — not WhatsApp</div>
+<div id="login">
+  <div><h1>Use WhatsApp on your computer</h1><ol><li>Open WhatsApp on your phone</li><li>Tap Menu → Linked devices</li><li>Point your phone at this screen to scan the QR code</li></ol></div>
+  <canvas aria-label="Scan this QR code to link a device!" width="200" height="200" style="background:#ddd"></canvas>
+</div>
+<div id="app">
+  <div id="side">
+    <header><span><b>Chats</b></span><button aria-label="New chat">+</button><button aria-label="Menu">⋮</button></header>
+    <div class="search" contenteditable="true" role="textbox" aria-label="Search input textbox" data-placeholder="Search or start a new chat" data-tab="3"></div>
+    <div id="pane-side" role="grid" aria-label="Chat list">
+      <div class="chat" role="row" tabindex="0"><b>Amma Fixture-Contact</b><div>SECRET-PREVIEW-7731 see you at 5</div></div>
+      <div class="chat" role="row" tabindex="0"><b>Ravi Fixture-Contact</b><div>SECRET-PREVIEW-8842 bank OTP is 4421</div></div>
+      <div class="chat" role="row" tabindex="0"><b>Family Fixture-Group</b><div>SECRET-PREVIEW-9953 photos</div></div>
+    </div>
+  </div>
+  <div id="main">
+    <header style="padding:10px"><b>Amma Fixture-Contact</b></header>
+    <div class="msgs" role="application"><p>SECRET-MESSAGE-1201 did you eat?</p><p>SECRET-MESSAGE-1202 call me</p></div>
+    <footer><div contenteditable="true" role="textbox" aria-label="Type a message"></div><button aria-label="Send">➤</button></footer>
+  </div>
+</div>
+<script>
+  // The test "logs in" (as the phone scan would) by calling this; Koode must wait without planner calls.
+  window.__fixtureLogin = () => { document.getElementById('login').remove(); document.getElementById('app').style.display = 'flex'; };
+  if (location.hash === '#logged-in') window.__fixtureLogin();
+  const box = document.querySelector('.search');
+  box.addEventListener('input', () => {
+    const q = box.textContent.trim().toLowerCase();
+    for (const c of document.querySelectorAll('.chat')) c.style.display = !q || c.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+  for (const c of document.querySelectorAll('.chat')) c.addEventListener('click', () => { document.querySelector('#main header b').textContent = c.querySelector('b').textContent; });
+</script>
+</body></html>

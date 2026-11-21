@@ -91,6 +91,15 @@ Record what Koode heard for 3–5 different phrasings (e.g. *"ഡാർക്ക
 | “Press Repeat to hear the instruction” | Chrome blocked audio on a freshly loaded page; press **Repeat** once. |
 | Mic button dimmed | Voice not configured (`"voice":false` in `/health`) or the page isn't https/localhost; typing still works. |
 
+## Companion journey rehearsal (feature branch, not the judging build)
+
+On `claude-koode-next` (not `koode-judging-final`): New Tab → WhatsApp → YouTube → practice form → Exit from the
+side panel. Steps and phrases: [`COMPANION.md`](COMPANION.md). Rehearse quota-free with
+`KOODE_SPEECH=mock scripts/start-rehearsal.sh` (typed requests work as-is; the mock STT returns transcripts queued via
+`POST /test/stt-queue`), or with real Sarvam voice by leaving `KOODE_SPEECH` unset. Before the first real-voice rehearsal:
+click the Koode toolbar icon on New Tab, hold the side-panel mic once and, if asked, use **Allow microphone**.
+Log in to WhatsApp Web on the demo laptop beforehand (Koode never logs in for the user).
+
 ## 90-second judging script
 
 Pre-flight checklist (before the judges arrive):

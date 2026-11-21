@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "unit": "node --test unit/",
+    "unit": "node --test unit/*.test.mjs",
     "e2e": "node e2e/run.mjs"
   },
   "devDependencies": { "playwright-core": "1.48.2" }

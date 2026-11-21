@@ -1,43 +1,77 @@
-# Koode browser companion (side panel) — feature branch
+# Koode browser companion (side panel)
 
-Not part of the judging build (`koode-judging-final`). Rehearsal results below used the labelled
-mock planner (`scripts/start-rehearsal.sh`); no real-Groq run has been done on this branch yet.
+Feature branch work (PR #2 browser companion + PR #3 `claude-koode-next`). Not part of the judging build
+(`koode-judging-final`); the judging tags are unchanged. Everything below was verified with the labelled
+**mock planner** and **mock speech** only — no real-Groq or real-Sarvam run has been done on this code.
 
-## What it adds
-- **Side panel:** clicking the Koode toolbar icon opens a persistent panel on any tab, including
-  Chrome's New Tab page (where content scripts cannot run).
-- **Navigation only on request:** "Open YouTube", "വാട്സ്ആപ്പ് തുറക്കൂ", or the site buttons
-  navigate the current tab with `chrome.tabs.update`. Site matching is rule-based (no model quota).
-- **Goal carry-over:** "Open YouTube and search for a Google Forms tutorial" opens YouTube, then the
-  in-page guide resumes with "search for google forms tutorial" using the same planner, ID
-  validation, arrow, action verification and voice as before.
-- **Progress mirror:** the side panel shows the current instruction and state from the page.
-- **End session:** clears the stored goal for the tab and stops guidance.
+## Target journey
+Chrome New Tab → WhatsApp Web → YouTube → practice application form → Exit, spoken in Malayalam from the
+side panel. The user performs every click and keystroke; Koode points, explains, waits and verifies.
 
-## Permissions (narrow)
-`sidePanel`, `tabs`, `storage`, `scripting`, `activeTab`; host access only for `localhost`,
-`127.0.0.1`, `https://docs.google.com/forms/*`, `https://web.whatsapp.com/*`,
-`https://www.youtube.com/*`. The old "click the icon to inject on any site" behaviour is replaced
-by the side panel, so other sites are not supported.
+| Say (side panel mic) | Koode does |
+|---|---|
+| `വാട്സ്ആപ്പ് തുറന്ന് ഒരാളെ തിരയണം` | Opens WhatsApp Web in this tab. If WhatsApp shows its QR login: asks the user to scan it on their phone and waits (no planner calls). Then points at the search box; after the user types a name, hands over: the user picks the contact and writes/sends the message. |
+| `യൂട്യൂബ് തുറന്ന് google forms tutorial തിരയൂ` | Opens YouTube, waits for the page, points at Search → user types and presses Enter → points at a matching video → user clicks → done. |
+| `അപേക്ഷാ ഫോം തുറക്കൂ` | Opens the practice application form (`localhost:8787/demo/form.html`) and says it is open. |
+| `ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ` | Guides field by field; the user submits. |
+| `നിർത്താം` / `മതി` / `exit` | Ends the session: goodbye (spoken if the user spoke), arrow and in-page card closed, tab state cleared, side panel closes. |
+
+Every transcript is shown for confirmation (✓ / edit / say again) before anything happens.
+
+## How it works
+- **Side panel voice:** hold the big mic (mouse, or Space/Enter when focused). Audio goes to the backend
+  (`/api/stt`, Sarvam Saaras v4; keys stay in the backend). If Chrome can't show the microphone prompt inside
+  the side panel, Koode offers **Allow microphone**, which opens a one-time extension page (`mic.html`) to grant it.
+- **Intent routing (no model quota), `src/shared/sites.js` → `classify()`:** exit / open a site / guide here.
+  Malayalam verb forms and case endings are handled (`തുറന്ന്`, `തുറക്കൂ`, `യൂട്യൂബിൽ`, `വാട്സ്ആപ്പിലേക്ക് പോകൂ`).
+  On a page Koode can guide, only an explicit "open X" / "on X" switches sites ("search for a WhatsApp tutorial"
+  on YouTube stays a YouTube goal). Exit only matches short whole-utterance phrases ("stop the video" is a goal).
+  The in-page panel (typed or spoken) uses the same routing.
+- **Spoken replies** play in the side panel when it is open for the tab (it holds the user's gesture, so a freshly
+  navigated page's autoplay policy can't silence them); otherwise the page plays them.
+- **Page readiness (`src/content/ready.js`):** after a navigation Koode waits for the document, the site's own
+  interface (WhatsApp chat shell, YouTube search box) and a quiet DOM before the first snapshot; after SPA route
+  changes it waits for the DOM to settle. WhatsApp QR login is detected and waited out (up to 5 min) without
+  planner calls, and the QR code is never covered. If the site's interface never appears (error or
+  unsupported-browser page), Koode says so instead of claiming the site is ready.
+- **Token budget:** on heavy pages the snapshot keeps on-screen controls first, at most 20 off-screen ones, drops
+  unlabelled links and the 3rd+ copy of identical controls, labels ≤ 64 chars, ≤ 12 context lines, and omits
+  positions for off-screen controls. Pages with ≤ 40 controls are unchanged.
 
 ## Privacy rules
-- WhatsApp Web: the chat list (`#pane-side`) and conversation (`#main`) are never extracted, so
-  contact names, message previews and messages are never sent to any model. Koode can only point
-  at page chrome such as the search box; the user picks the contact and writes/sends messages.
-- Koode never logs in, sends messages or submits forms. The user does every click and keystroke.
+- **WhatsApp Web:** `#main`, `#pane-side`, the chat list and `[role=application]` are never extracted. On WhatsApp
+  no model is used at all: a local rule ("WhatsApp privacy rule (no AI)") points at the search control and then
+  hands over. Clicks inside the private chat list are not reported or treated as wrong actions.
+- **Google Forms:** the content script runs only on respondent pages (`…/viewform`, `…/formResponse`), never on
+  the form editor (`…/edit`) or the forms list. No form URL is hardcoded.
+- Koode never logs in, sends messages or submits forms. Input values are never read (only filled/valid flags).
 
-## Verified in real Chrome (Chrome for Testing 156, mock planner, real websites)
-| Check | Result |
+## Permissions
+`sidePanel`, `tabs`, `storage`. Host access: `localhost`, `127.0.0.1`, Google Forms respondent pages,
+`web.whatsapp.com`, `www.youtube.com`. (`scripting` and `activeTab` were removed: the toolbar opens the side panel.)
+
+## Verified (Chrome for Testing 158, macOS, mock planner + mock speech)
+| Suite | Result |
 |---|---|
-| Toolbar → side panel on New Tab | Opens; shows "Current tab: New Tab" |
-| New Tab → "Open YouTube and search for a Google Forms tutorial" | Same tab navigates to youtube.com; goal carried over |
-| YouTube guidance | Arrow on Search box → user types + Enter → arrow on a matching video → user clicks → Done on /watch |
-| Practice form (Google Forms structure) from side panel | Arrow on "Morning" → caption click verified → "Bus" in the 2nd question → user clicks Submit → Done |
-| New Tab → WhatsApp Web | Opens web.whatsapp.com; Koode loads. Stops at WhatsApp's QR login (user must log in on their phone) |
-| WhatsApp Web → YouTube from the side panel | Navigates; goal carried over; arrow on the YouTube Search box |
+| Unit (`npm run unit`) | 27/27 |
+| Journey (`node e2e/journey.mjs`), WhatsApp/YouTube as local fixtures at their real hostnames | 25/25 checks, 3 consecutive runs (≈ 35 s per journey) |
+| Regression (`node e2e/run.mjs`, ×2) | form 8/8, settings A 3/3, settings B 3/3, Google-Forms structure 3/3, voice 3/3 steps correct; wrong clicks recovered; no typed values in planner payloads; arrow anchor error ≤ 0.5 px |
+| Real sites (`--only real`, logged out, headless) | youtube.com: arrow on the real search box after readiness. web.whatsapp.com: real "Scan to log in" page detected, no planner calls; on runs where WhatsApp served its unsupported-browser page to headless Chrome, Koode said the page did not finish loading |
 
-## Not verified (assumptions)
-- Contact search guidance on a logged-in WhatsApp Web (needs the user's phone to log in).
-- Real-Groq planning on YouTube/WhatsApp (quota preserved; mock only).
-- Typing Malayalam into the side panel in Chrome (matching is unit-checked; the VM keyboard tool could not type Malayalam).
-- Voice from the side panel itself: voice stays in the in-page panel on supported sites.
+Planner payload, first request (estimated prompt tokens = 443 + 0.382 × user-message chars, fitted on 8 logged
+real-Groq requests):
+
+| Page | Before (PR #2) | After |
+|---|---|---|
+| YouTube home (fixture, 96 videos) | 150 candidates, ≈ 4,360 tokens | 60 candidates, ≈ 2,030 tokens |
+| YouTube home (real, logged out) | — | 60 candidates, ≈ 2,030 tokens |
+| Practice form / Google-Forms structure / settings | unchanged (≈ 1,220 / 960 / 650) | unchanged |
+
+## Not verified
+- **Real Groq** planning on YouTube and the practice form from this branch (quota preserved).
+- **Real Sarvam** STT/TTS through the side panel, and a real human voice (mock speech returns queued transcripts).
+- **Chrome's microphone prompt inside a real side panel**: tests open the panel page as a window with
+  auto-granted fake media. The `mic.html` fallback has not been exercised in a real side panel.
+- **Logged-in WhatsApp Web**: the search-box selector/label (`Search input textbox`) and private-area selectors
+  are tested only on the fixture.
+- `chrome.sidePanel.close()` on exit (Chrome 141+; falls back to `window.close()`).

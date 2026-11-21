@@ -46,7 +46,7 @@ SARVAM_API_KEY=... also enables voice: Saaras v4 speech-to-text and Bulbul v3 Ma
 
 Demo and real-microphone test procedure: [`docs/DEMO.md`](docs/DEMO.md).
 
-The content script auto-loads on `localhost`/`127.0.0.1`. On other sites, click the Koode toolbar button to opt in for that tab (`activeTab`).
+The content script loads on `localhost`/`127.0.0.1`, Google Forms respondent pages, `web.whatsapp.com` and `www.youtube.com`. The Koode toolbar button opens the **side panel** on any tab (including New Tab): hold its mic and say e.g. `വാട്സ്ആപ്പ് തുറക്കൂ`, `യൂട്യൂബ് തുറന്ന് google forms tutorial തിരയൂ`, `അപേക്ഷാ ഫോം തുറക്കൂ`, `നിർത്താം`. See [`docs/COMPANION.md`](docs/COMPANION.md).
 
 Optional env: `KOODE_PROVIDER`, `KOODE_MODEL`, `KOODE_LLM_TIMEOUT_MS`, `OPENAI_BASE_URL`, `GROQ_BASE_URL`, `KOODE_REASONING_EFFORT` (gpt-oss: low|medium|high, default low), `KOODE_REQUIRE_LLM=1`, `HOST` (default 127.0.0.1), `PORT`, `KOODE_LOG=0` (disable the sanitised audit log in `backend/logs/`), `KOODE_FAULT=stale_first` (test: first answer uses a stale ID). Voice: `KOODE_STT_MODEL` (default `saaras:v4`), `KOODE_STT_LANGUAGE` (default `ml-IN`), `KOODE_TTS_MODEL` (default `bulbul:v3`), `KOODE_TTS_SPEAKER`, `KOODE_SPEECH_TIMEOUT_MS`.
 
@@ -54,9 +54,15 @@ Optional env: `KOODE_PROVIDER`, `KOODE_MODEL`, `KOODE_LLM_TIMEOUT_MS`, `OPENAI_B
 
 ```bash
 cd tests && npm install
-npm run unit                                  # planner/safety unit tests
-CHROME_PATH=/path/to/chrome npm run e2e -- --repeat 3   # backend must be running
+npm run unit                                  # planner/safety/routing unit tests
+# Real-Chrome E2E needs Chrome for Testing (branded Chrome ignores --load-extension):
+npx @puppeteer/browsers install chrome@stable --path ~/.cache/koode-cft
+# Quota-free backend for tests (labelled mock planner + mock speech); any free port:
+(cd ../backend && PORT=8797 KOODE_PROVIDER=mock KOODE_SPEECH=mock npm start) &
+KOODE_BACKEND=http://localhost:8797 node e2e/journey.mjs    # New Tab → WhatsApp → YouTube → form → Exit
+KOODE_BACKEND=http://localhost:8797 node e2e/run.mjs --repeat 2
 ```
+Both E2E runners refuse to use real Groq/Sarvam unless `KOODE_E2E_ALLOW_PAID=1`. `KOODE_SPEECH=mock` is refused in judging mode (`KOODE_REQUIRE_LLM=1`).
 
 E2E writes `artifacts/e2e/report.json` and screenshots per step (anchor error, arrow-tip distance, wrong-click outcome, privacy audit of planner payloads).
 

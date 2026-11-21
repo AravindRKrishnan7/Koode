@@ -41,7 +41,7 @@ The verifiable action (click / fill / check / select) is derived from the elemen
 
 ## POST /api/stt and /api/tts (extension → backend → Sarvam)
 
-Voice is optional (`/health` reports `"voice": true` when `SARVAM_API_KEY` is set). The key never leaves the backend.
+Voice is optional (`/health` reports `"voice": true` and `"speech": "sarvam"` when `SARVAM_API_KEY` is set, or `"speech": "mock"` with `KOODE_SPEECH=mock`: a labelled offline stand-in for tests that returns transcripts queued via `POST /test/stt-queue` (local clients only) and a chime for replies). The key never leaves the backend.
 
 ```jsonc
 // /api/stt  request: push-to-talk clip (≤ 25 s), base64     response:

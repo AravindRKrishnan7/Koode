@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>YouTube</title>
+<!-- TEST FIXTURE served by tests/e2e/journey.mjs at https://www.youtube.com/ via request interception.
+     Not YouTube: a structural stand-in (masthead search_query box, SPA routing, a heavy home feed with
+     many links and unlabelled thumbnails) to exercise readiness, guidance and the token budget. -->
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; }
+  #fixture { background: #fde68a; padding: 4px 8px; font-size: 12px; }
+  #masthead { display: flex; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: #fff; }
+  #masthead form { display: flex; flex: 1; max-width: 560px; margin: 0 auto; }
+  #masthead input { flex: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px 0 0 20px; }
+  #masthead button { padding: 8px 16px; border: 1px solid #ccc; border-radius: 0 20px 20px 0; }
+  #content { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+  .v a.thumb { display: block; height: 90px; background: #ddd; border-radius: 8px; }
+  .v a.title { display: block; font-weight: 600; margin-top: 6px; color: #0f0f0f; text-decoration: none; }
+  .v .meta { font-size: 12px; color: #606060; }
+  #results .r { display: flex; gap: 12px; padding: 8px 16px; }
+  #results .r a.thumb { width: 240px; height: 135px; background: #ddd; border-radius: 8px; flex: none; }
+</style></head>
+<body>
+<div id="fixture">Koode test fixture — not YouTube</div>
+<div id="masthead">
+  <button aria-label="Guide">☰</button><a href="/" aria-label="Home">▶ Home</a>
+  <form id="sf" action="/results"><input name="search_query" placeholder="Search" aria-label="Search" autocomplete="off"><button id="search-icon-legacy" aria-label="Search">🔍</button></form>
+  <button aria-label="Search with your voice">🎤</button><button aria-label="Sign in">Sign in</button>
+</div>
+<div id="view"></div>
+<script>
+  const TOPICS = ['Cooking', 'Cricket highlights', 'Malayalam songs', 'News live', 'Gardening tips', 'Travel vlog', 'Movie trailer', 'Yoga for beginners', 'Kerala recipes', 'Football', 'Comedy', 'Music mix'];
+  const RESULTS = ['Google Forms Tutorial for Beginners', 'How to create a Google Form (step by step)', 'Google Forms tips and tricks', 'Make a quiz with Google Forms'];
+  const vid = (t, i) => `<div class="v"><a class="thumb" href="/watch?v=h${i}"></a><a class="title" href="/watch?v=h${i}">${t} ${i}</a><div class="meta"><a href="/@channel${i}">Channel ${i}</a> · ${i}K views</div><button aria-label="Action menu">⋮</button></div>`;
+  function render() {
+    const u = new URL(location.href);
+    const view = document.getElementById('view');
+    if (u.pathname === '/results') {
+      const q = u.searchParams.get('search_query') || '';
+      document.querySelector('[name=search_query]').value = q;
+      const list = /form/i.test(q) ? RESULTS : TOPICS.slice(0, 4);
+      view.innerHTML = '<h2 style="padding:0 16px">Results</h2><div id="results">' + list.map((t, i) => `<div class="r"><a class="thumb" href="/watch?v=r${i}"></a><div><a class="title" href="/watch?v=r${i}">${t}</a><div class="meta">Channel ${i}</div></div></div>`).join('') + '</div>';
+    } else if (u.pathname === '/watch') {
+      view.innerHTML = `<div style="padding:16px"><div style="height:360px;background:#000"></div><h1 id="title">${document.querySelector('a[href="/watch?v=' + u.searchParams.get('v') + '"]')?.textContent || 'Video'}</h1><button aria-label="Like">👍</button><button aria-label="Share">Share</button></div>`;
+    } else {
+      // Heavy home feed, loaded after a delay like the real app shell.
+      view.innerHTML = '';
+      setTimeout(() => { view.innerHTML = '<div id="content">' + Array.from({ length: 96 }, (_, i) => vid(TOPICS[i % TOPICS.length], i + 1)).join('') + '</div>'; }, 600);
+    }
+  }
+  // SPA navigation like the real site: no full page loads between home, results and watch.
+  const go = (url) => { history.pushState({}, '', url); render(); };
+  document.getElementById('sf').addEventListener('submit', (e) => { e.preventDefault(); go('/results?search_query=' + encodeURIComponent(e.target.search_query.value)); });
+  document.addEventListener('click', (e) => { const a = e.target.closest('a[href^="/"]'); if (a) { e.preventDefault(); go(a.getAttribute('href')); } });
+  addEventListener('popstate', render);
+  render();
+</script>
+</body></html>
