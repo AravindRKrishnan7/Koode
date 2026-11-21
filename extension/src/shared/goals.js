@@ -168,6 +168,7 @@
 
   // ---------------------------------------------------------------- intent planner output
   const TYPES = new Set(['youtube_search', 'service', 'on_page', 'ask', 'unsupported']);
+  const WANTS = new Set(['official', 'video', 'unspecified']);
   function cleanText(v, max) {
     if (typeof v !== 'string') return '';
     const s = v.normalize('NFC').replace(INVISIBLE, ' ').split(/\s+/).filter((w) => !(/:\/\//.test(w) || /^www\./i.test(w) || TLD.test(w))).join(' ');
@@ -182,18 +183,37 @@
     const qm = cleanQuery(obj.query_ml), qe = cleanQuery(obj.query_en);
     const harm = [qm.reason, qe.reason].find((r) => r === 'self_harm' || r === 'unsafe');
     if (harm) return { ok: true, intent: { type: 'unsupported', content_lang, query_ml: '', query_en: '', question_ml: '', reason: harm === 'self_harm' ? 'self_harm' : 'unsafe_query' } };
-    const intent = { type: obj.type, content_lang, query_ml: qm.ok ? qm.query : '', query_en: qe.ok ? qe.query : '', question_ml: cleanText(obj.question_ml, 160) };
+    const intent = { type: obj.type, content_lang, query_ml: qm.ok ? qm.query : '', query_en: qe.ok ? qe.query : '', question_ml: cleanText(obj.question_ml, 160),
+      service_id: '', subservice_id: '', wants: WANTS.has(obj.wants) ? obj.wants : 'unspecified' };
+    // A service can only be nominated by a verified catalogue id; anything else (a URL, a host, an unknown id)
+    // means "no verified destination".
+    const Cat = globalThis.KoodeCatalogue;
+    const entry = intent.type === 'service' && Cat && typeof obj.service_id === 'string' ? Cat.byId(obj.service_id) : null;
+    if (entry) {
+      intent.service_id = entry.id;
+      const sub = Cat.serviceOf(entry, obj.subservice_id);
+      if (sub) intent.subservice_id = sub.id;
+    }
     if (intent.type === 'youtube_search' && !intent.query_ml && !intent.query_en) return { ok: false, reason: 'no_valid_query', intent };
     if (intent.type !== 'ask') intent.question_ml = '';
+    if (intent.type !== 'service') { intent.service_id = ''; intent.subservice_id = ''; }
     return { ok: true, intent };
   }
 
   // ---------------------------------------------------------------- what the UI does with an intent
   const MSG = {
     service: {
-      ml: 'സർക്കാർ വെബ്സൈറ്റുകൾ Koode ഇപ്പോൾ തുറക്കില്ല: ഏതാണ് ഔദ്യോഗിക സൈറ്റ് എന്ന് ഇതുവരെ പരിശോധിച്ച് ഉറപ്പാക്കിയിട്ടില്ല. ഊഹിച്ച് ഒരു സൈറ്റ് തുറക്കില്ല.',
-      en: "Koode doesn't open government websites yet: their official addresses haven't been verified for Koode, and it won't guess one."
+      ml: 'ഈ സേവനത്തിന്റെ ഔദ്യോഗിക വെബ്സൈറ്റ് Koode ഇതുവരെ പരിശോധിച്ച് ഉറപ്പാക്കിയിട്ടില്ല. തെറ്റായ സൈറ്റിലേക്ക് പോകാതിരിക്കാൻ ഊഹിച്ച് ഒരു സൈറ്റും തുറക്കില്ല.',
+      en: "Koode hasn't verified an official website for this service yet, so it won't guess one (a wrong site could be a scam)."
     },
+    choose: { ml: 'എങ്ങനെ സഹായിക്കണം? 1) ഔദ്യോഗിക സർക്കാർ വെബ്സൈറ്റിലേക്ക് പോകാം, അല്ലെങ്കിൽ 2) മലയാളം ട്യൂട്ടോറിയൽ കാണാം. "ഒന്ന്" അല്ലെങ്കിൽ "രണ്ട്" എന്ന് പറയൂ.',
+      en: 'How should I help? 1) Go to the official government website, or 2) watch a Malayalam tutorial. Say "one" or "two", or press a button.' },
+    optOfficial: { ml: 'ഔദ്യോഗിക വെബ്സൈറ്റിലേക്ക് പോകാം', en: 'Go to the official website' },
+    optVideo: { ml: 'മലയാളം ട്യൂട്ടോറിയൽ കാണാം', en: 'Watch a Malayalam tutorial' },
+    cancelled: { ml: 'ശരി, തുറക്കുന്നില്ല.', en: "Okay, I won't open it." },
+    needGrant: { ml: 'Chrome അനുവാദം ചോദിക്കാൻ താഴെയുള്ള "✓ തുറക്കാം" ബട്ടൺ അമർത്തൂ.', en: 'Press the "✓ Open" button below so Chrome can ask for access to this site (one time).' },
+    offSite: { ml: 'ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല. Koode ഇവിടെ നിർദ്ദേശങ്ങൾ നിർത്തി. തിരികെ പോകാൻ ബ്രൗസറിലെ "Back" അമർത്തൂ.',
+      en: 'This is not the official site, so Koode has paused guidance. Use the browser Back button to return.' },
     offer: { ml: 'ഇതിനെക്കുറിച്ചുള്ള വീഡിയോകൾ കാണാം', en: 'Show videos about it' },
     on_page: { ml: 'ഈ പേജിൽ Koode-ന് ഇപ്പോൾ സഹായിക്കാനാവില്ല. വീഡിയോ വേണമെങ്കിൽ "… വീഡിയോ" എന്ന് പറയൂ.', en: 'Koode cannot guide this page yet. For videos, say "… video".' },
     ask: { ml: 'കുറച്ചുകൂടി വ്യക്തമായി പറയാമോ? ഉദാ: "സോളാർ പാനൽ ഇൻസ്റ്റലേഷൻ വീഡിയോകൾ".', en: 'Could you say a little more about what you want? e.g. “solar panel installation videos”.' },
@@ -221,7 +241,10 @@
         return search ? { kind: 'youtube_search', search } : { kind: 'say', ...MSG.noQuery, reason: 'no_query' };
       }
       case 'service': {
-        // M1: no government site is navigable. A how-to video search is offered instead (the user chooses).
+        // Only a verified catalogue entry can be opened; otherwise explain, and offer (never start) a tutorial search.
+        const Cat = globalThis.KoodeCatalogue;
+        const entry = Cat && resp.service_id ? Cat.byId(resp.service_id) : null;
+        if (entry) return { kind: 'service', entry, service: Cat.serviceOf(entry, resp.subservice_id), want: resp.wants || 'unspecified' };
         const offer = planSearch(resp);
         return { kind: 'say', ...MSG.service, offer: offer || null, offerLabel: MSG.offer, reason: 'service_not_verified' };
       }

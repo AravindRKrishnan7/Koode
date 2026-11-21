@@ -5,12 +5,14 @@
 const $ = (id) => document.getElementById(id);
 const Sites = self.KoodeSites;
 const Goals = self.KoodeGoals;
+const Cat = self.KoodeCatalogue;
 const voice = globalThis.Koode.voice;
 const send = (msg) => chrome.runtime.sendMessage(msg);
 const params = new URLSearchParams(location.search);
 const PINNED_TAB = Number(params.get('tabId')) || null; // tests open the panel as a window bound to one tab
 
-const S = { tabId: null, windowId: null, site: null, url: '', voiceSession: false, confirming: false, voiceToken: 0, spoken: 0, exiting: false };
+const S = { tabId: null, windowId: null, site: null, url: '', voiceSession: false, confirming: false, voiceToken: 0, spoken: 0, exiting: false,
+  pending: null }; // pending: { kind: 'choose' | 'confirm', entry, service, goal } awaiting the user's answer
 
 function log(t) {
   const li = document.createElement('li');
@@ -38,11 +40,12 @@ function say({ ml, en, notice }) {
 function setNotice(text, action) {
   const n = $('notice');
   n.textContent = text || '';
-  if (action) {
+  const actions = !action ? [] : Array.isArray(action) ? action : [action];
+  if (actions.length) n.appendChild(document.createElement('br'));
+  for (const a of actions) {
     const b = document.createElement('button');
-    b.type = 'button'; b.textContent = action.label; b.id = action.id || '';
-    b.addEventListener('click', action.run);
-    n.appendChild(document.createElement('br'));
+    b.type = 'button'; b.textContent = a.label; b.id = a.id || '';
+    b.addEventListener('click', a.run);
     n.appendChild(b);
   }
   n.classList.toggle('hidden', !text);
@@ -100,7 +103,21 @@ async function handle(text, opts = {}) {
   const privacy = Goals.redactionNotice(red.found);
   if (red.found.length) { document.body.dataset.koodeRedacted = red.found.join(','); log('removed personal data from the request: ' + red.found.join(', ')); }
   else delete document.body.dataset.koodeRedacted;
-  for (const k of ['koodeSearch', 'koodeIntentResult', 'koodeOffer', 'koodeNewTab']) delete document.body.dataset[k];
+  for (const k of ['koodeSearch', 'koodeIntentResult', 'koodeOffer', 'koodeNewTab', 'koodeOptions', 'koodeConfirmService', 'koodeAnswer']) delete document.body.dataset[k];
+  const talk0 = (ml, en) => { say({ ml, en }); if (opts.voice) speak(ml); };
+  // An open options/confirmation card: "ഒന്ന്" / "വെബ്സൈറ്റ്" / "രണ്ട്" / "ശരി" / "വേണ്ട" answer it.
+  if (S.pending) {
+    const p = S.pending, a = Cat.answer(red.text);
+    document.body.dataset.koodeAnswer = a || 'none';
+    if (a) {
+      log(`answer to ${p.kind}: ${a}`);
+      if (a === 'no') { S.pending = null; setState('idle'); return talk0(Goals.MSG.cancelled.ml, Goals.MSG.cancelled.en); }
+      if (p.kind === 'choose' && a === 'video') { S.pending = null; return search(Cat.videoSearch(p.entry, p.service), p.goal, opts, talk0); }
+      if (p.kind === 'choose') return confirmService(p.entry, p.service, p.goal, opts, talk0);
+      if (a === 'yes' || a === 'official') return approveByVoice(opts, talk0);
+    }
+    S.pending = null; // anything else is a new request
+  }
   const c = Sites.classify(red.text, { siteId: S.site && S.site.id });
   document.body.dataset.koodeIntent = c.type + (c.site ? ':' + c.site.id : '');
   log(`request (${raw.length} chars, ${opts.voice ? 'voice' : 'typed'}) → ${c.type}${c.site ? ' ' + c.site.id : ''}`);
@@ -117,6 +134,7 @@ async function handle(text, opts = {}) {
   switch (c.type) {
     case 'exit': return exit(opts.voice);
     case 'youtube_search': return search(c.search, c.goal, opts, talk);
+    case 'service': return serviceFlow(c, opts, talk);
     case 'intent': return intent(red.text, opts, talk);
     case 'navigate': {
       setState('loading');
@@ -133,6 +151,7 @@ async function handle(text, opts = {}) {
     case 'which_site': setState('idle'); return talk('ഏത് വെബ്സൈറ്റ് വേണം? ഉദാ: "വാട്സ്ആപ്പ് തുറക്കൂ", "യൂട്യൂബ് തുറക്കൂ", "അപേക്ഷാ ഫോം തുറക്കൂ".',
       'Which website? I can open: ' + Sites.SITES.map((s) => s.name).join(', ') + '.');
     case 'guide': {
+      if (c.serviceId) return handleGuide(c.goal, opts);
       setState('finding');
       say({ ml: 'ശരി, ഈ പേജിൽ നോക്കുന്നു…', en: 'Okay — looking at this page…' });
       const r = await send({ type: 'koode:startOnTab', tabId: S.tabId, goal: c.goal, voice: !!opts.voice });
@@ -172,6 +191,7 @@ async function intent(text, opts, talk) {
   log('intent → ' + document.body.dataset.koodeIntentResult + (resp && resp.planner ? ` (${resp.planner.mock ? 'mock' : resp.planner.model})` : ''));
   const a = Goals.intentToAction(resp, { guidable: !!S.site });
   if (a.kind === 'youtube_search') return search(a.search, text, opts, talk);
+  if (a.kind === 'service') return serviceFlow({ ...a, goal: text }, opts, talk);
   if (a.kind === 'guide') return handleGuide(text, opts);
   setState('idle');
   talk(a.ml, a.en);
@@ -179,6 +199,69 @@ async function intent(text, opts, talk) {
     document.body.dataset.koodeOffer = a.offer.query;
     setNotice(a.offerLabel.ml + ' · ' + a.offerLabel.en, { label: '▶ ' + a.offerLabel.ml, id: 'offer', run: () => search(a.offer, text, opts, (ml, en) => { say({ ml, en }); if (opts.voice) speak(ml); }) });
   }
+}
+
+// ---- verified services ----
+// Explicit "official website" → confirmation card; explicit "video" → tutorial search; otherwise both options.
+function serviceFlow({ entry, service, want, goal }, opts, talk) {
+  log(`service ${entry.id}${service ? '/' + service.id : ''} want=${want}`);
+  document.body.dataset.koodeService = entry.id + (service ? '/' + service.id : '');
+  if (want === 'video') return search(Cat.videoSearch(entry, service), goal, opts, talk);
+  if (want === 'official') return confirmService(entry, service, goal, opts, talk);
+  S.pending = { kind: 'choose', entry, service, goal };
+  setState('idle');
+  const what = service ? service.ml : entry.ml;
+  talk(`${what}: ${Goals.MSG.choose.ml}`, `${service ? service.en : entry.name}: ${Goals.MSG.choose.en}`);
+  document.body.dataset.koodeOptions = 'official,video';
+  setNotice(`🏛️ ${entry.ml} · ${entry.hosts[0]}`, [
+    { label: '1 · 🏛️ ' + Goals.MSG.optOfficial.ml, id: 'opt-official', run: () => confirmService(entry, service, goal, opts, talk) },
+    { label: '2 · ▶ ' + Goals.MSG.optVideo.ml, id: 'opt-video', run: () => { S.pending = null; search(Cat.videoSearch(entry, service), goal, opts, talk); } }
+  ]);
+}
+
+function confirmService(entry, service, goal, opts, talk) {
+  S.pending = { kind: 'confirm', entry, service, goal };
+  setState('idle');
+  const host = entry.hosts[0];
+  talk(`ഔദ്യോഗിക സൈറ്റ്: ${entry.ml}, ${host}. Koode പരിശോധിച്ചത് ${entry.verified.on}. ${service ? service.ml + '. ' : ''}തുറക്കട്ടെ? "ശരി" അല്ലെങ്കിൽ "വേണ്ട" എന്ന് പറയൂ.`,
+    `Official site: ${entry.name} (${host}), verified by Koode on ${entry.verified.on}. Open it? Press ✓ or say "yes" / "no".`);
+  document.body.dataset.koodeConfirmService = entry.id;
+  setNotice(`🏛️ ${entry.name} · ${host} · verified ${entry.verified.on}`, [
+    { label: '✓ തുറക്കാം · Open', id: 'svc-yes', run: () => approveByClick(opts, talk) },
+    { label: '✗ വേണ്ട · Cancel', id: 'svc-no', run: () => { S.pending = null; setState('idle'); talk(Goals.MSG.cancelled.ml, Goals.MSG.cancelled.en); } }
+  ]);
+}
+
+// ✓ pressed: Chrome's access request must come straight from the click (user gesture), for this host only.
+function approveByClick(opts, talk) {
+  const p = S.pending;
+  if (!p || p.kind !== 'confirm') return;
+  chrome.permissions.request({ origins: Cat.origins(p.entry) }).then((ok) => {
+    document.body.dataset.koodeGranted = String(ok);
+    if (!ok) { setState('idle'); return talk('അനുവാദം നൽകിയില്ല; ഒന്നും തുറന്നില്ല.', 'Access was not granted, so nothing was opened.'); }
+    S.pending = null;
+    openService(p, opts, talk);
+  }, (e) => { log('permission request failed: ' + e.message); talk(Goals.MSG.needGrant.ml, Goals.MSG.needGrant.en); });
+}
+
+// "ശരി" spoken: fine if Chrome access was granted before; otherwise the ✓ button is needed (a voice reply is
+// not a click, so Chrome would not show its prompt).
+async function approveByVoice(opts, talk) {
+  const p = S.pending;
+  const st = await send({ type: 'koode:serviceStatus', serviceId: p.entry.id });
+  if (st && st.granted) { S.pending = null; return openService(p, opts, talk); }
+  document.body.dataset.koodeNeedGrant = 'true';
+  talk(Goals.MSG.needGrant.ml, Goals.MSG.needGrant.en);
+}
+
+async function openService(p, opts, talk) {
+  setState('loading');
+  talk(`${p.entry.ml} തുറക്കുന്നു…`, `Opening ${p.entry.name}…`);
+  const r = await send({ type: 'koode:openService', tabId: S.tabId, serviceId: p.entry.id, subId: p.service && p.service.id, goal: p.goal, voice: !!opts.voice });
+  if (!r || r.error) { setState('error'); return say({ ml: 'തുറക്കാനായില്ല.', en: 'Could not open it: ' + (r && r.error || 'no response') }); }
+  document.body.dataset.koodeNavigated = p.entry.id;
+  if (r.newTab) document.body.dataset.koodeNewTab = String(r.tabId);
+  log(`opening ${p.entry.hosts[0]}${r.newTab ? ' in a new tab (typed input kept)' : ''}`);
 }
 
 async function handleGuide(goal, opts) {
@@ -334,6 +417,7 @@ function showProgress(p) {
   if (p.site) $('where').textContent = 'ഇപ്പോഴത്തെ ടാബ് · Current tab: ' + p.site + (p.active ? ' · guiding' : '');
   if (p.arrived) document.body.dataset.koodeArrived = p.siteId || '';
   if (p.login) document.body.dataset.koodeLogin = 'true';
+  if (p.offSite) document.body.dataset.koodeOffSite = 'true';
 }
 
 let port = null;

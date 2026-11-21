@@ -37,6 +37,21 @@ Routing order: personal-data redaction → rule router (exit / open site / video
 `goals.js` validates it and the service worker builds the YouTube URL itself. Koode still never clicks or types.
 See `docs/CONTRACTS.md` → `/api/intent`.
 
+## Verified government services (M2)
+| Say | Koode does |
+|---|---|
+| `എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം` | Options: **1** official website (Sarathi Parivahan) / **2** Malayalam tutorial. Answer by voice ("ഒന്ന്", "രണ്ട്") or button. |
+| `… ഔദ്യോഗിക വെബ്സൈറ്റിൽ / website / online` | Skips the options: confirmation card with the site name, host and verification date. |
+| `… വീഡിയോ / tutorial` | Tutorial search (M1). |
+| ✓ / "ശരി" | First time: Chrome asks for access to `sarathi.parivahan.gov.in` only. Then Koode opens the catalogue URL and guides: popup × → state "Kerala" → Skip → Others → DL Search → the user types mobile number and captcha → "check your details" pause → Generate OTP → hand-off (Koode stops reading; the OTP and the personal results are the user's alone). |
+| a service with no verified entry (e.g. ration card) | Says clearly that no official website has been verified; a tutorial is offered as a button, never opened automatically. |
+
+- Leaving the official host mid-task (redirect or link) pauses guidance: "ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല".
+- Captcha, licence / DL / application numbers, OTP and password fields are sensitive: values never read; the user types them.
+- Popups (announcement modals, even ones wrongly marked `aria-hidden`) are detected by hit-testing; Koode points at
+  their close button first and never at a control hidden behind them.
+- Spoken "ശരி" works once Chrome access exists; the first grant needs the ✓ button (Chrome only prompts on a click).
+
 ## How it works
 - **Side panel voice:** hold the big mic (mouse, or Space/Enter when focused). Audio goes to the backend
   (`/api/stt`, Sarvam Saaras v4; keys stay in the backend). If Chrome can't show the microphone prompt inside
@@ -66,7 +81,7 @@ See `docs/CONTRACTS.md` → `/api/intent`.
 - Koode never logs in, sends messages or submits forms. Input values are never read (only filled/valid flags).
 
 ## Permissions
-`sidePanel`, `tabs`, `storage`. Host access: `localhost`, `127.0.0.1`, Google Forms respondent pages,
+`sidePanel`, `tabs`, `storage`, `scripting` (registers content scripts for a catalogue host only after it is granted). Optional host access, asked per site on confirmation: `sarathi.parivahan.gov.in`. Host access: `localhost`, `127.0.0.1`, Google Forms respondent pages,
 `web.whatsapp.com`, `www.youtube.com`. (`scripting` and `activeTab` were removed: the toolbar opens the side panel.)
 
 ## Verified (Chrome for Testing 158, macOS, mock planner + mock speech + mock intent)

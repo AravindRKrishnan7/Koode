@@ -79,3 +79,28 @@ numbers first (`extension/src/shared/goals.js`); the backend redacts again befor
 - Audit log: `backend/logs/intent-requests.jsonl` (sanitised request + validated result).
 - Test-only: `POST /test/intent-queue {"outputs":["<raw model text>", …]}` (mock planner, local clients only)
   queues raw "model outputs" that go through the same validation.
+
+## M2: verified services
+
+**Catalogue** (`extension/src/shared/catalogue.js`): the only destinations Koode opens for a service. Each entry has
+`id`, `kind`, names (en/ml), `entry` URL, exact `hosts`, `verified { on, by, evidence[], recheck_by }`, `topic` words and
+`services[] { id, en, ml, words, hint, handoff, video }`. Entries are added only after checking the live site (TLS,
+operator, an independent link from a parent official site). First entry: Sarathi Parivahan
+(`https://sarathi.parivahan.gov.in/sarathiservice/stateSelection.do`, linked from parivahan.gov.in).
+
+**`/api/intent` additions:** `service_id` (a catalogue id or `""`), `subservice_id`, `wants` (`official | video |
+unspecified`). The prompt receives `VERIFIED_SERVICES` (ids and descriptions, no URLs); anything that isn't a
+catalogue id is dropped, and the UI explains that no verified website exists.
+
+**`/api/plan` additions:** optional `task_hint` (≤ 400 chars, from the catalogue, redacted) → `TASK_HINT` in the prompt;
+`snapshot.popup: true` when a popup covers the page (covered controls are left out). Labels and context texts are
+redacted (personal numbers) server-side. Select lists keep up to 40 options (state lists).
+
+**Permissions:** `optional_host_permissions` per catalogue host; content scripts for a host are registered with
+`chrome.scripting.registerContentScripts` only after the user grants it (static `content_scripts` matches would
+grant it at install). The side panel's ✓ calls `chrome.permissions.request` from the click; the in-page panel opens
+`src/sidepanel/grant.html` (pages cannot request permissions).
+
+**Service worker messages:** `koode:openService { serviceId, subId, goal, voice }` (URL from the catalogue only;
+returns `permission_needed` / `needsGrant`), `koode:serviceStatus`, `koode:grantInfo`. Origin guard: a service task
+whose tab leaves the entry's hosts is dropped and the panel shows "ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല".

@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const G = require('../../extension/src/shared/goals.js');
+// Loaded second: validateIntent checks nominated service ids against it (globalThis.KoodeCatalogue).
+export const Catalogue = require('../../extension/src/shared/catalogue.js');
 
 export const { redact, safety, cleanQuery, validateIntent, planSearch, youtubeResultsUrl, LANGS } = G;
 export default G;

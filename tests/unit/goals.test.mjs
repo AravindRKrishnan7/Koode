@@ -131,7 +131,8 @@ test('validateIntent: strict schema; URLs, sites and unknown types from the mode
   // Extra fields (url, service_id, candidate_host) never survive.
   const v = G.validateIntent({ type: 'service', url: 'https://evil.gov.in', candidate_host: 'evil.gov.in', query_ml: 'ലൈസൻസ് [DL_NUMBER]', query_en: 'licence renewal', content_lang: 'xx' });
   assert.ok(v.ok);
-  assert.deepEqual(Object.keys(v.intent).sort(), ['content_lang', 'query_en', 'query_ml', 'question_ml', 'type']);
+  assert.deepEqual(Object.keys(v.intent).sort(), ['content_lang', 'query_en', 'query_ml', 'question_ml', 'service_id', 'subservice_id', 'type', 'wants']);
+  assert.equal(v.intent.service_id, '', 'an unknown service id or host is never kept');
   assert.deepEqual([v.intent.query_ml, v.intent.content_lang], ['ലൈസൻസ്', 'ml']);
   // Unsafe queries turn the whole intent into "unsupported".
   assert.equal(G.validateIntent({ type: 'youtube_search', query_en: 'porn' }).intent.type, 'unsupported');

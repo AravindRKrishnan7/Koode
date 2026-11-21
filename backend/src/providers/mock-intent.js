@@ -4,7 +4,7 @@
 //
 // Tests can also queue raw "model output" strings (POST /test/intent-queue, local clients only) to check
 // that malicious or malformed model answers are rejected by the same validation a real model gets.
-import { safety } from '../goals.js';
+import { safety, Catalogue } from '../goals.js';
 
 const queue = [];
 
@@ -37,7 +37,11 @@ export function mockIntent(req) {
   const words = t.replace(/[.,!?]/g, ' ').split(/\s+/).filter((w) => w && !DROP.test(w));
   const query_ml = words.join(' ');
   const query_en = words.map((w) => GLOSSARY[w] || (/^[a-z0-9]+$/.test(w) ? w : '')).filter(Boolean).join(' ');
-  if (SERVICE.test(t)) return { type: 'service', query_ml, query_en, content_lang: 'ml' };
+  if (SERVICE.test(t)) {
+    // Nominates a catalogue id only when the catalogue's own words match (a model gets the same list).
+    const m = Catalogue.match(t);
+    return { type: 'service', service_id: m ? m.entry.id : '', subservice_id: m && m.service ? m.service.id : '', wants: Catalogue.wants(t), query_ml, query_en, content_lang: 'ml' };
+  }
   if (ON_PAGE.test(t) && req.site_id) return { type: 'on_page' };
   if (LEARN.test(t) && query_ml) return { type: 'youtube_search', query_ml, query_en, content_lang: 'ml' };
   return { type: 'ask', question_ml: 'എന്താണ് ചെയ്യേണ്ടതെന്ന് കുറച്ചുകൂടി പറയാമോ? (mock)' };

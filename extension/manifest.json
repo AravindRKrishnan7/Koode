@@ -1,13 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Koode — കൂടെ",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Screen-aware guide: points to the right control, waits for you to act, and verifies each step.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
     "sidePanel",
-    "tabs"
+    "tabs",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://sarathi.parivahan.gov.in/*"
   ],
   "host_permissions": [
     "http://localhost/*",
@@ -39,6 +43,7 @@
       "js": [
         "src/shared/constants.js",
         "src/shared/goals.js",
+        "src/shared/catalogue.js",
         "src/shared/sites.js",
         "src/content/extractor.js",
         "src/content/overlay.js",

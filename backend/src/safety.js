@@ -32,13 +32,14 @@ function sanitizeCandidate(c) {
     role: str(c.role, 24),
     tag: str(c.tag, 16),
     type: str(c.type, 16),
-    label: str(c.label),
+    // Personal numbers that a page shows in a label (a licence or application number) never reach the model.
+    label: c.label === undefined ? undefined : redact(str(c.label) || '').text,
     section: str(c.section, 60),
     state: sanitizeState(c.state),
     sensitive: sensitive || undefined,
     in_viewport: bool(c.in_viewport),
     bbox: c.bbox ? prune({ x: num(c.bbox.x), y: num(c.bbox.y), w: num(c.bbox.w), h: num(c.bbox.h) }) : undefined,
-    options: Array.isArray(c.options) && !sensitive ? c.options.slice(0, 15).map((o) => str(o, 40)).filter(Boolean) : undefined
+    options: Array.isArray(c.options) && !sensitive ? c.options.slice(0, 40).map((o) => str(o, 40)).filter(Boolean) : undefined
   });
   if (sensitive) out.state = prune({ filled: out.state.filled, required: out.state.required, disabled: out.state.disabled });
   return out;
@@ -53,15 +54,18 @@ export function sanitizePlanRequest(body) {
   const snap = body.snapshot || {};
   const candidates = (Array.isArray(snap.candidates) ? snap.candidates : []).slice(0, MAX_CANDIDATES).map(sanitizeCandidate).filter(Boolean);
   const context = (Array.isArray(snap.context) ? snap.context : []).slice(0, 20)
-    .map((c) => prune({ kind: str(c && c.kind, 12), text: str(c && c.text, 120) })).filter((c) => c.text);
+    .map((c) => prune({ kind: str(c && c.kind, 12), text: str(c && c.text, 120) && redact(str(c && c.text, 120)).text })).filter((c) => c.text);
   const history = (Array.isArray(body.history) ? body.history : []).slice(-MAX_HISTORY).map((h) => prune({
     step: num(h.step), target_label: str(h.target_label), role: str(h.role, 24), action: str(h.action, 12),
     outcome: str(h.outcome, 24), evidence: str(h.evidence, 24), clicked_label: str(h.clicked_label), page_changed: bool(h.page_changed)
   }));
   const ev = body.last_event && typeof body.last_event === 'object' ? body.last_event : null;
   const last_event = ev ? prune({ type: str(ev.type, 24), label: str(ev.label), clicked_label: str(ev.clicked_label), reason: str(ev.reason, 40), target_id: str(ev.target_id, 24), evidence: str(ev.evidence, 24), page_changed: bool(ev.page_changed), alert: bool(ev.alert) }) : null;
+  // TASK_HINT: the route for a verified service, from Koode's catalogue (not from the page).
+  const task_hint = str(body.task_hint, 400) && redact(str(body.task_hint, 400)).text;
   return {
     goal,
+    task_hint: task_hint || undefined,
     snapshot: {
       snapshot_id: str(snap.snapshot_id, 16),
       origin: str(snap.origin, 120),
@@ -69,7 +73,8 @@ export function sanitizePlanRequest(body) {
       title: str(snap.title, 100),
       viewport: snap.viewport ? prune({ w: num(snap.viewport.w), h: num(snap.viewport.h) }) : undefined,
       candidates,
-      context
+      context,
+      popup: snap.popup === true || undefined
     },
     history,
     last_event

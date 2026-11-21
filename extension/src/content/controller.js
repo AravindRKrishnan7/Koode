@@ -6,6 +6,7 @@
   const C = K.constants;
   const { extractor, overlay, monitor, panel, voice } = K;
   const G = K.goals;
+  const Cat = K.catalogue;
   const THIN_RESULTS = 3; // fewer videos than this on a results page → try the fallback query
 
   const S = { goal: '', voice: false, history: [], step: 0, target: null, lastPlan: null, lastEvent: null, token: 0, invalidRetries: 0, rateRetries: 0, active: false };
@@ -22,7 +23,7 @@
   panel.setInstruction = (i = {}) => { setInstruction0(i); mirror.ml = i.ml || ''; mirror.en = i.en || ''; progress(); };
 
   function persist(extra = {}) {
-    const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, search: S.search || undefined, ...extra } : null;
+    const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, search: S.search || undefined, service: S.service || undefined, ...extra } : null;
     send({ type: task ? 'koode:saveTask' : 'koode:clearTask', task }).catch(() => {});
   }
 
@@ -46,7 +47,15 @@
       if (my !== S.token || !S.active) return;
     }
     S.snapHref = location.href;
-    const snap = extractor.snapshot();
+    let snap = extractor.snapshot();
+    // A popup is still animating in (page behind it covered, its own buttons not shown yet): wait and look again.
+    for (let i = 0; i < 4 && snap.popup && !snap.candidates.length; i++) {
+      panel.log('popup still opening; waiting before reading the page');
+      await K.ready.quiet(400, 1500);
+      await new Promise((r) => setTimeout(r, 500));
+      if (my !== S.token || !S.active) return;
+      snap = extractor.snapshot();
+    }
     panel.log(`snapshot ${snap.snapshot_id}: ${snap.candidates.length} candidates`);
     const t0 = performance.now();
     let resp = localPlan(snap);
@@ -54,7 +63,7 @@
     // Normal steps take < 1 s; a longer wait is almost always the model's free-tier rate limit.
     const slow = setTimeout(() => { if (my === S.token) panel.setNotice('⏳ ഒരു നിമിഷം — AI സേവനം തിരക്കിലാണ്. · The AI service is busy; this can take up to 15 s.'); }, SLOW_NOTICE_MS);
     try {
-      resp = await send({ type: 'koode:plan', payload: { goal: plannerGoal(), snapshot: snap, history: S.history.slice(-12), last_event: lastEvent || null } });
+      resp = await send({ type: 'koode:plan', payload: { goal: plannerGoal(), task_hint: taskHint(), snapshot: snap, history: S.history.slice(-12), last_event: lastEvent || null } });
     } catch (e) {
       resp = { error: String(e && e.message || e) };
     } finally {
@@ -115,6 +124,32 @@
     return (S.goal + ` (YouTube search results for "${S.search.query}" are open: guide the user to open one relevant video.)`).slice(0, 300);
   }
 
+  // On a verified service site: the catalogue's route for this task (trusted text, not page content).
+  function serviceNow() {
+    if (!S.service || !Cat) return null;
+    const entry = Cat.byId(S.service.id);
+    if (!entry || !Cat.onHosts(entry, location.href)) return null;
+    return { entry, service: Cat.serviceOf(entry, S.service.sub) };
+  }
+  function taskHint() {
+    const sv = serviceNow();
+    return sv ? Cat.taskHint(sv.entry, sv.service) : undefined;
+  }
+  // Hand-off: after the user completes the step named in the catalogue (e.g. "Generate OTP"), Koode stops
+  // reading the page; OTPs and the personal results that follow are the user's alone.
+  function serviceRule() {
+    const sv = serviceNow();
+    if (!sv || !sv.service || !sv.service.handoff) return null;
+    const h = sv.service.handoff.toLowerCase();
+    const last = S.history[S.history.length - 1];
+    if (last && last.outcome === 'verified' && (last.target_label || '').toLowerCase().includes(h)) {
+      return { status: 'done', rule: 'svc_handoff', planner: { provider: 'rule', model: 'Service hand-off rule (no AI)', mock: false },
+        instruction_ml: `ഇനി ഫോണിൽ വരുന്ന OTP നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്ത് തുടരൂ. സ്വകാര്യ വിവരങ്ങൾ ഉള്ളതിനാൽ ഇവിടെ നിന്ന് Koode പേജ് വായിക്കില്ല.`,
+        instruction_en: 'Now type the OTP from your phone yourself and continue. The next pages show your personal details, so Koode stops reading the page here.' };
+    }
+    return null;
+  }
+
   // YouTube searches opened by Koode: a video page means the user opened a video (done, no model call).
   const YT_RULE = { provider: 'rule', model: 'YouTube search rule (no AI)', mock: false };
   function youtubeRule() {
@@ -135,6 +170,8 @@
   function localPlan(snap) {
     const yt = youtubeRule();
     if (yt) return yt;
+    const sr = serviceRule();
+    if (sr) return sr;
     if (here()?.id !== 'whatsapp') return null;
     if (S.history.some((h) => h.outcome === 'verified' && h.rule === 'wa_search')) {
       return { status: 'done', rule: 'wa_handoff', planner: WA_RULE,
@@ -182,11 +219,15 @@
 
   function show(resp, r) {
     S.target = r;
-    const sensitiveNote = r.info.sensitive ? ' 🔒 ഇത് സ്വകാര്യമാണ് — Koode ഇത് വായിക്കില്ല. നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യൂ.' : '';
+    // On an official service: a final submit / payment / OTP request gets a "check your details" pause.
+    const finalStep = serviceNow() && /submit|pay|payment|proceed|confirm|generate otp|get otp|send otp|apply/i.test(r.info.label || '');
+    const sensitiveNote = (r.info.sensitive ? ' 🔒 ഇത് സ്വകാര്യമാണ് — Koode ഇത് വായിക്കില്ല. നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യൂ.' : '') +
+      (finalStep ? ' ✋ അമർത്തുന്നതിന് മുമ്പ് നിങ്ങൾ നൽകിയ വിവരങ്ങൾ ഒന്നുകൂടി പരിശോധിക്കൂ.' : '');
+    if (finalStep) host().dataset.koodeCheckPause = r.info.label;
     panel.setState('waiting');
     panel.setStep(S.step, r.info.label);
     panel.setInstruction({ ml: (resp.instruction_ml || '') + sensitiveNote, en: resp.instruction_en, explain: resp.explanation_ml });
-    say(resp.instruction_ml + (r.info.sensitive ? ' ഇത് നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യൂ.' : ''));
+    say(resp.instruction_ml + (r.info.sensitive ? ' ഇത് നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യൂ.' : '') + (finalStep ? ' അമർത്തുന്നതിന് മുമ്പ് വിവരങ്ങൾ ഒന്നുകൂടി പരിശോധിക്കൂ.' : ''));
     overlay.point(r.anchor, {
       text: resp.instruction_ml || resp.instruction_en,
       step: S.step,
@@ -400,6 +441,12 @@
     const text = red.text;
     const privacy = G.redactionNotice(red.found);
     if (privacy) { panel.log('removed personal data from the request: ' + red.found.join(', ')); host().dataset.koodeRedacted = red.found.join(','); }
+    if (S.pending) {
+      const p = S.pending, a = Cat.answer(text);
+      host().dataset.koodeAnswer = a || 'none';
+      if (a) return answerPending(p, a, opts);
+      S.pending = null;
+    }
     const c = K.sites.classify(text, { siteId: here()?.id });
     panel.log('request routed: ' + c.type + (c.site ? ' ' + c.site.id : ''));
     host().dataset.koodeRoute = c.type;
@@ -413,6 +460,7 @@
     }
     if (c.type === 'youtube_search') return youtubeSearch(c.search, c.goal, opts, privacy);
     if (c.type === 'intent') return askIntent(text, opts, privacy);
+    if (c.type === 'service') return serviceFlow(c, opts, privacy);
     if (privacy) { panel.setNotice(privacy.ml + ' · ' + privacy.en); say(privacy.ml, opts.voice); }
     if (c.type === 'exit') return exit({ voice: opts.voice });
     if (c.type === 'navigate') {
@@ -472,11 +520,63 @@
     const a = G.intentToAction(resp, { guidable: true });
     if (a.kind === 'youtube_search') return youtubeSearch(a.search, text, opts, privacy);
     if (a.kind === 'guide') return start(text, opts);
+    if (a.kind === 'service') return serviceFlow({ ...a, goal: text }, opts, privacy);
     panel.setState('idle');
     const lead = privacy ? privacy.ml + ' ' : '';
     panel.setInstruction({ ml: lead + a.ml, en: (privacy ? privacy.en + ' ' : '') + a.en });
     say(lead + a.ml, opts.voice);
     if (a.offer) panel.setNotice(a.offerLabel.ml + ' · ' + a.offerLabel.en, { label: '▶ ' + a.offerLabel.ml, id: 'koode-offer', run: () => youtubeSearch(a.offer, text, opts) });
+  }
+
+  // ---- verified services (catalogue.js): options card, confirmation, then the service worker navigates ----
+  function talkHere(ml, en, opts) { panel.setInstruction({ ml, en }); say(ml, opts.voice); }
+  function serviceFlow({ entry, service, want, goal }, opts = {}, privacy = null) {
+    panel.log(`service ${entry.id}${service ? '/' + service.id : ''} want=${want}`);
+    host().dataset.koodeService = entry.id + (service ? '/' + service.id : '');
+    if (want === 'video') return youtubeSearch(Cat.videoSearch(entry, service), goal, opts, privacy);
+    if (want === 'official') return confirmService(entry, service, goal, opts);
+    stop(true, true);
+    S.pending = { kind: 'choose', entry, service, goal };
+    panel.setState('idle');
+    const lead = privacy ? privacy.ml + ' ' : '';
+    talkHere(lead + (service ? service.ml : entry.ml) + ': ' + G.MSG.choose.ml, (privacy ? privacy.en + ' ' : '') + G.MSG.choose.en, opts);
+    panel.setNotice(`🏛️ ${entry.ml} · ${entry.hosts[0]}`, [
+      { label: '1 · 🏛️ ' + G.MSG.optOfficial.ml, id: 'opt-official', run: () => confirmService(entry, service, goal, opts) },
+      { label: '2 · ▶ ' + G.MSG.optVideo.ml, id: 'opt-video', run: () => { S.pending = null; youtubeSearch(Cat.videoSearch(entry, service), goal, opts); } }
+    ]);
+  }
+  function confirmService(entry, service, goal, opts = {}) {
+    stop(true, true);
+    S.pending = { kind: 'confirm', entry, service, goal };
+    panel.setState('idle');
+    const host0 = entry.hosts[0];
+    talkHere(`ഔദ്യോഗിക സൈറ്റ്: ${entry.ml}, ${host0}. Koode പരിശോധിച്ചത് ${entry.verified.on}. ${service ? service.ml + '. ' : ''}തുറക്കട്ടെ? "ശരി" അല്ലെങ്കിൽ "വേണ്ട" എന്ന് പറയൂ.`,
+      `Official site: ${entry.name} (${host0}), verified by Koode on ${entry.verified.on}. Open it?`, opts);
+    host().dataset.koodeConfirmService = entry.id;
+    panel.setNotice(`🏛️ ${entry.name} · ${host0} · verified ${entry.verified.on}`, [
+      { label: '✓ തുറക്കാം · Open', id: 'svc-yes', run: () => answerPending(S.pending, 'yes', opts) },
+      { label: '✗ വേണ്ട · Cancel', id: 'svc-no', run: () => answerPending(S.pending, 'no', opts) }
+    ]);
+  }
+  async function answerPending(p, a, opts = {}) {
+    if (!p) return;
+    panel.log(`answer to ${p.kind}: ${a}`);
+    if (a === 'no') { S.pending = null; panel.setNotice(''); panel.setState('idle'); return talkHere(G.MSG.cancelled.ml, G.MSG.cancelled.en, opts); }
+    if (p.kind === 'choose' && a === 'video') { S.pending = null; return youtubeSearch(Cat.videoSearch(p.entry, p.service), p.goal, opts); }
+    if (p.kind === 'choose') return confirmService(p.entry, p.service, p.goal, opts);
+    S.pending = null;
+    panel.setNotice('');
+    panel.setState('loading');
+    talkHere(`${p.entry.ml} തുറക്കുന്നു…`, `Opening ${p.entry.name}…`, opts);
+    const r = await send({ type: 'koode:openService', serviceId: p.entry.id, subId: p.service && p.service.id, goal: p.goal, voice: !!opts.voice }).catch((e) => ({ error: String(e && e.message || e) }));
+    if (!r || r.error) return fail('Could not open ' + p.entry.name + ': ' + (r && r.error || 'no response'), 'തുറക്കാനായില്ല.');
+    if (r.needsGrant) {
+      // Pages can't ask Chrome for access; a one-time Koode tab does, then opens the site here.
+      host().dataset.koodeNeedGrant = 'true';
+      panel.setState('idle');
+      return talkHere('Chrome അനുവാദത്തിനായി ഒരു Koode ടാബ് തുറന്നു. അവിടെ "അനുവദിച്ച് തുറക്കാം" അമർത്തൂ.', 'A Koode tab opened to ask Chrome for access to this site (one time). Press "Allow & open" there.', opts);
+    }
+    if (r.newTab) { panel.setState('idle'); talkHere('നിങ്ങൾ ടൈപ്പ് ചെയ്തത് നഷ്ടപ്പെടാതിരിക്കാൻ സൈറ്റ് പുതിയ ടാബിൽ തുറന്നു.', 'The site opened in a new tab so what you typed here is kept.', opts); }
   }
 
   // Counts distinct video links on a YouTube results page (presence only; nothing is read or sent).
@@ -567,7 +667,10 @@
   function start(goal0, opts = {}) {
     stop(true);
     const goal = G.redact(goal0).text;
-    Object.assign(S, { goal, voice: !!opts.voice, history: [], step: 0, active: true, invalidRetries: 0, rateRetries: 0, search: null });
+    const ce = here() && here().catalogue && Cat ? Cat.byId(here().id) : null;
+    const cm = ce && Cat.match(goal);
+    Object.assign(S, { goal, voice: !!opts.voice, history: [], step: 0, active: true, invalidRetries: 0, rateRetries: 0, search: null, pending: null,
+      service: ce ? { id: ce.id, sub: cm && cm.entry === ce && cm.service ? cm.service.id : undefined } : null });
     ttsWarned = false;
     panel.setNotice('');
     panel.setGoal(goal);
@@ -579,7 +682,7 @@
   // A page opened on request: wait until it is ready (and the user has logged in, on WhatsApp), then
   // continue the carried-over goal, or just report that the site is open.
   async function resume(task) {
-    Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0, rateRetries: 0, search: task.search || null });
+    Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0, rateRetries: 0, search: task.search || null, service: task.service || null });
     const my = ++S.token;
     let sidePanel = false;
     try { sidePanel = !!(await send({ type: 'koode:panelOpen' })).open; } catch (_) {}

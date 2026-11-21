@@ -187,14 +187,18 @@
   // Optional action: one button under the notice (e.g. "show videos about it").
   function setNotice(text, action) {
     els.notice.textContent = text || '';
-    if (text && action) {
+    const actions = !text || !action ? [] : Array.isArray(action) ? action : [action];
+    if (actions.length) els.notice.appendChild(document.createElement('br'));
+    for (const a of actions) {
       const b = document.createElement('button');
-      b.type = 'button'; b.textContent = action.label; b.className = 'offer';
-      b.addEventListener('click', action.run);
-      els.notice.appendChild(document.createElement('br'));
+      b.type = 'button'; b.textContent = a.label; b.className = 'offer';
+      b.dataset.id = a.id || '';
+      b.addEventListener('click', a.run);
       els.notice.appendChild(b);
-      host.dataset.koodeOffer = action.id || 'offer';
-    } else delete host.dataset.koodeOffer;
+    }
+    if (actions.length) host.dataset.koodeOffer = actions.map((a) => a.id || 'offer').join(','); else delete host.dataset.koodeOffer;
+    noticeButtons = actions.map((a) => a.id || '');
+    setTimeout(buttonRects, 0);
     els.notice.classList.toggle('hidden', !text);
     if (text) host.dataset.koodeNotice = text; else delete host.dataset.koodeNotice;
   }
@@ -207,6 +211,12 @@
     if (handlers.onMicUp) handlers.onMicUp();
   }
 
+  // Notice button positions for automated tests (the shadow root is closed): "id:x,y,w,h;…".
+  let noticeButtons = [];
+  function buttonRects() {
+    const out = Array.from(els.notice.querySelectorAll('button')).map((b) => { const r = b.getBoundingClientRect(); return b.dataset.id + ':' + [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
+    if (out.length) host.dataset.koodeButtons = out.join(';'); else delete host.dataset.koodeButtons;
+  }
   // Mic position for automated tests (the shadow root is closed).
   function micRect() {
     const r = els.mic.getBoundingClientRect();

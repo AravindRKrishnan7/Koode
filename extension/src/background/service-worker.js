@@ -1,7 +1,7 @@
 // Background service worker: proxies planner and voice requests to the Koode backend
 // (keeps API keys off the page/extension), stores per-tab task state, and connects the
 // browser-level side panel with the in-page guide (navigation, progress, spoken replies, exit).
-importScripts('../shared/goals.js', '../shared/sites.js');
+importScripts('../shared/goals.js', '../shared/catalogue.js', '../shared/sites.js');
 const DEFAULT_BACKEND = 'http://localhost:8787';
 
 async function backendUrl() {
@@ -63,6 +63,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'koode:plan': return api('/api/plan', msg.payload);
       case 'koode:intent': return api('/api/intent', msg.payload);
       case 'koode:youtubeSearch': return youtubeSearch(msg.search, msg.goal, msg.voice, tabId, !!pageTab);
+      case 'koode:serviceStatus': return serviceStatus(msg.serviceId);
+      case 'koode:openService': return openService(msg, tabId, !!pageTab);
+      case 'koode:grantInfo': return (await chrome.storage.session.get('grant:' + msg.grantTab))['grant:' + msg.grantTab] || null;
       case 'koode:stt': return api('/api/stt', msg.payload);
       case 'koode:tts': return api('/api/tts', msg.payload);
       case 'koode:health': return health();
@@ -104,10 +107,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // While a requested navigation is in flight, task writes from the old page's origin are ignored.
 // Kept in session storage so it survives service-worker restarts.
 async function staleWriter(tabId, sender) {
+  let from;
+  try { from = new URL(sender.url || '').origin; } catch (_) { return true; }
   const k = 'nav:' + tabId;
   const origin = (await chrome.storage.session.get(k))[k];
-  if (!origin) return false;
-  try { return new URL(sender.url || '').origin !== origin; } catch (_) { return true; }
+  if (origin) return from !== origin;
+  // A page that is unloading (its tab already shows another site) can't write: e.g. after the origin guard
+  // stopped a service task, the old official page must not re-save it.
+  const tab = sender.tab && sender.tab.id === tabId ? await chrome.tabs.get(tabId).catch(() => null) : null;
+  if (tab && /^https?:/.test(tab.url || '')) { try { return new URL(tab.url).origin !== from; } catch (_) { return false; } }
+  return false;
 }
 // Any completed load ends the navigation window (destination, redirect, or abandoned navigation).
 chrome.tabs.onUpdated.addListener((tabId, info) => {
@@ -169,6 +178,85 @@ async function youtubeSearch(search, goal, voice, tabId, fromPage) {
   await chrome.tabs.update(tabId, { url });
   return { ok: true, tabId, newTab: false, query: s.query, url };
 }
+
+// ---- verified services (catalogue.js) ----
+// Chrome access is per host and optional: requested only after the user confirms, only for that entry's
+// hosts. Content scripts for a catalogue host are registered only once its host permission is granted.
+const CONTENT_JS = chrome.runtime.getManifest().content_scripts[0].js;
+async function serviceStatus(serviceId) {
+  const e = self.KoodeCatalogue.byId(serviceId);
+  if (!e) return { error: 'unknown service' };
+  return { granted: await chrome.permissions.contains({ origins: self.KoodeCatalogue.origins(e) }), hosts: e.hosts };
+}
+async function syncServiceScripts() {
+  const Cat = self.KoodeCatalogue;
+  const have = new Set((await chrome.scripting.getRegisteredContentScripts().catch(() => [])).map((r) => r.id));
+  for (const e of Cat.CATALOGUE) {
+    const id = 'koode-svc-' + e.id;
+    const granted = await chrome.permissions.contains({ origins: Cat.origins(e) }).catch(() => false);
+    if (granted && !have.has(id)) {
+      await chrome.scripting.registerContentScripts([{ id, matches: Cat.origins(e), js: CONTENT_JS, runAt: 'document_idle', persistAcrossSessions: true }]).catch((err) => console.warn('register', id, err.message));
+    } else if (!granted && have.has(id)) await chrome.scripting.unregisterContentScripts({ ids: [id] }).catch(() => {});
+  }
+}
+chrome.permissions.onAdded.addListener(() => syncServiceScripts());
+chrome.permissions.onRemoved.addListener(() => syncServiceScripts());
+chrome.runtime.onInstalled.addListener(() => syncServiceScripts());
+chrome.runtime.onStartup.addListener(() => syncServiceScripts());
+syncServiceScripts();
+
+// Opens a verified service after the user confirmed it. msg: { serviceId, subId, goal, voice }. The URL comes
+// from the catalogue only. Without Chrome access yet: from the side panel the panel asks Chrome itself (it holds
+// the click); from a web page a one-time grant page is opened (pages cannot ask for permissions).
+async function openService(msg, tabId, fromPage) {
+  const Cat = self.KoodeCatalogue;
+  const e = Cat.byId(msg.serviceId);
+  if (!e) return { error: 'unknown service' };
+  if (!tabId) return { error: 'no tab' };
+  const sub = Cat.serviceOf(e, msg.subId);
+  const goal = self.KoodeGoals.redact(String(msg.goal || '')).text.slice(0, 300) || (sub ? sub.en : e.name);
+  if (!(await chrome.permissions.contains({ origins: Cat.origins(e) }))) {
+    if (!fromPage) return { error: 'permission_needed', code: 'permission_needed' };
+    const grantTab = await chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/grant.html'), active: true });
+    await chrome.storage.session.set({ ['grant:' + grantTab.id]: { serviceId: e.id, subId: sub && sub.id, goal, voice: !!msg.voice, tabId } });
+    return { ok: true, needsGrant: true, grantTab: grantTab.id };
+  }
+  await syncServiceScripts();
+  const task = { goal, voice: !!msg.voice, history: [], step: 0, url: e.entry, fresh: true, arrival: e.id, service: { id: e.id, sub: sub && sub.id } };
+  const toNav = async (id) => {
+    await chrome.storage.session.set({ ['nav:' + id]: new URL(e.entry).origin, ['task:' + id]: task });
+    await chrome.storage.session.remove('progress:' + id);
+    toPanels(id, { type: 'navigating', site: { id: e.id, name: e.name, ml: e.ml }, goal });
+    await chrome.tabs.update(id, { url: e.entry, active: true });
+  };
+  const target = tabId;
+  const unsaved = await chrome.tabs.sendMessage(target, { type: 'koode:hasUnsavedInput' }).then((r) => !!(r && r.unsaved), () => false);
+  if (unsaved) {
+    const from = await chrome.tabs.get(target).catch(() => null);
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true, ...(from ? { windowId: from.windowId, index: from.index + 1, openerTabId: from.id } : {}) });
+    await toNav(tab.id);
+    return { ok: true, tabId: tab.id, newTab: true, host: e.hosts[0] };
+  }
+  if (!fromPage) await chrome.tabs.sendMessage(target, { type: 'koode:stop', quiet: true }).catch(() => {});
+  await toNav(target);
+  return { ok: true, tabId: target, newTab: false, host: e.hosts[0] };
+}
+
+// Origin guard: a service task stays on its verified hosts. If the tab goes anywhere else (a redirect, a link
+// to another site), guidance pauses and the side panel says why. Koode never follows the user off-site.
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (!info.url || !/^https?:/.test(info.url)) return;
+  const k = 'task:' + tabId;
+  const task = (await chrome.storage.session.get(k))[k];
+  if (!task || !task.service) return;
+  const e = self.KoodeCatalogue.byId(task.service.id);
+  if (e && self.KoodeCatalogue.onHosts(e, info.url)) return;
+  await chrome.storage.session.remove([k, 'nav:' + tabId]);
+  const m = self.KoodeGoals.MSG.offSite;
+  const p = { state: 'stopped', ml: m.ml, en: m.en, offSite: true, tabId, at: Date.now() };
+  await chrome.storage.session.set({ ['progress:' + tabId]: p });
+  toPanels(tabId, { type: 'progress', progress: p });
+});
 
 async function startOnTab(goal, voice, tabId) {
   const tab = tabId ? await chrome.tabs.get(tabId).catch(() => null) : null;

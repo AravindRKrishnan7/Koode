@@ -9,6 +9,8 @@
 //   { type: 'need_link' }                              "open Google Forms" without a form: the user must open their form link
 //   { type: 'youtube_search', search, goal }           rule fast path: a video/search request with a clear topic →
 //                                                      search = { query, lang, fallback:null, lazyFallback } (no model)
+//   { type: 'service', entry, service, want, goal }    a verified catalogue destination (catalogue.js) is meant;
+//                                                      want: official | video | unspecified (→ offer both)
 //   { type: 'intent', goal }                           open-ended request (no site named, or a learning request on a page
 //                                                      that is not about it): ask the intent planner (/api/intent)
 // Text is expected to be redacted already (KoodeGoals.redact).
@@ -19,7 +21,7 @@
     { id: 'youtube', name: 'YouTube', ml: 'യൂട്യൂബ്', url: 'https://www.youtube.com/', host: 'www.youtube.com',
       words: ['youtube', 'you tube', 'യൂട്യൂബ്', 'യുട്യൂബ്', 'യൂടൂബ്', 'യൂ ട്യൂബ്', 'യൂറ്റ്യൂബ്', 'യുടൂബ്'] },
     { id: 'practiceform', name: 'Practice application form', ml: 'അപേക്ഷാ ഫോം', url: 'http://localhost:8787/demo/form.html', host: 'localhost', path: '/demo/form.html',
-      words: ['application form', 'practice form', 'apply form', 'travel card form', 'അപേക്ഷാ ഫോം', 'അപേക്ഷ ഫോം', 'അപേക്ഷാഫോം', 'ആപ്ലിക്കേഷൻ ഫോം', 'പ്രാക്ടീസ് ഫോം', 'അപേക്ഷ'],
+      words: ['application form', 'practice form', 'apply form', 'travel card form', 'അപേക്ഷാ ഫോം', 'അപേക്ഷ ഫോം', 'അപേക്ഷാഫോം', 'ആപ്ലിക്കേഷൻ ഫോം', 'പ്രാക്ടീസ് ഫോം'],
       // A bare "form" names the practice form only together with an open verb (or from a page Koode can't guide).
       weak: ['form', 'ഫോം'] }
   ];
@@ -169,6 +171,14 @@
     // On a page Koode can guide, only an explicit "open X" / "on X" switches sites; a passing mention
     // ("search for a WhatsApp tutorial" on YouTube) stays a goal for this page.
     const pick = strong[0] || (!guidable ? scored[0] : null);
+    // A verified service ("ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ…") wins over a loose site word (e.g. "അപേക്ഷ"); an explicit
+    // "on YouTube / open WhatsApp" still goes to that site.
+    const Cat = globalThis.KoodeCatalogue;
+    const cm = Cat && Cat.match(t);
+    if (cm && !(pick && (pick.verb || pick.attached) && pick.site.id !== 'practiceform')) {
+      if (cm.entry.id === here) return { type: 'guide', goal: String(text).trim(), serviceId: cm.entry.id, subId: cm.service && cm.service.id };
+      return { type: 'service', entry: cm.entry, service: cm.service, want: Cat.wants(t), goal: String(text).trim() };
+    }
     if (pick) {
       const cuts = [pick];
       if (pick.verb) cuts.push(pick.verb);
@@ -210,6 +220,9 @@
       return pf || { id: 'demo', name: 'Koode demo page' };
     }
     if (u.hostname === 'docs.google.com') return isGoogleFormRespondentPath(u.pathname) ? GOOGLE_FORMS : null;
+    const Cat = globalThis.KoodeCatalogue;
+    const ce = Cat && u.protocol === 'https:' && Cat.forHost(u.hostname);
+    if (ce) return { id: ce.id, name: ce.name, ml: ce.ml, catalogue: true, kind: ce.kind };
     return SITES.find((s) => s.host === u.hostname && !s.path) || null;
   }
   function isGoogleFormRespondentPath(p) {

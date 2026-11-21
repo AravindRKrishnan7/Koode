@@ -26,7 +26,7 @@
     ].join(','),
     // Elements inside these containers are never extracted or sent anywhere.
     PRIVATE_SELECTOR: '[data-koode-private],[data-private]',
-    SENSITIVE_RE: /pass(word|code)|\bpin\b|otp|one[\s-]?time|cvv|cvc|card\s*(number|no)|credit|debit|iban|account\s*(number|no)|aadhaa?r|\bssn\b|secret|security\s*code|verification\s*code/i,
+    SENSITIVE_RE: /pass(word|code)|\bpin\b|otp|one[\s-]?time|cvv|cvc|card\s*(number|no)|credit|debit|iban|account\s*(number|no)|aadhaa?r|\bssn\b|secret|security\s*code|verification\s*code|captcha|licen[cs]e\s*(number|no)|\bdl\s*(number|no)|application\s*(number|no)|\bpan\b|\bvid\b/i,
     SENSITIVE_AUTOCOMPLETE_RE: /^(current-password|new-password|one-time-code|cc-)/i,
     UI_HOST_IDS: ['koode-panel-root', 'koode-overlay-root']
   };

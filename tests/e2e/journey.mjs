@@ -7,7 +7,10 @@
 // MOCK speech (KOODE_PROVIDER=mock KOODE_SPEECH=mock). WhatsApp and YouTube are local test fixtures served
 // at their real hostnames through request interception (tests/e2e/fixtures/), so no login is needed.
 //
-// Usage: node e2e/journey.mjs [--headed] [--only journey|goals|editor|inpage|real] [--budget]
+// Usage: node e2e/journey.mjs [--headed] [--only journey|goals|grant|services|real-services|editor|inpage|real] [--budget]
+//   --only services       verified-service flow on a Sarathi stand-in served at sarathi.parivahan.gov.in; uses a TEST COPY of
+//                         the extension with the catalogue host pre-granted (automation cannot click Chrome's permission prompt)
+//   --only real-services  the same, on the real sarathi.parivahan.gov.in (logged out); stops at the mobile-number field, types nothing
 //   --only real  opens the real web.whatsapp.com (logged out) and www.youtube.com instead of fixtures
 //   --budget  measure planner payload size per page (run once with KOODE_EXT=<old extension> to compare)
 import { chromium } from 'playwright-core';
@@ -18,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, '../..');
-const EXT = process.env.KOODE_EXT || path.join(ROOT, 'extension');
+let EXT = process.env.KOODE_EXT || path.join(ROOT, 'extension');
 const ARTIFACTS = path.join(ROOT, 'artifacts', 'e2e');
 const BACKEND = process.env.KOODE_BACKEND || 'http://localhost:8787';
 // The extension's site list opens the practice form at localhost:8787; tests serve demo pages from disk
@@ -33,6 +36,16 @@ const args = process.argv.slice(2);
 const headed = args.includes('--headed');
 const budgetMode = args.includes('--budget');
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
+const PREGRANT = only === 'services' || only === 'real-services';
+// Test copy of the extension whose optional catalogue hosts are granted at load (host_permissions).
+function pregrantedExtension(src) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-ext-pregrant-'));
+  fs.cpSync(src, dir, { recursive: true });
+  const mf = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  mf.host_permissions = [...mf.host_permissions, ...(mf.optional_host_permissions || [])];
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(mf, null, 2));
+  return dir;
+}
 const SECRETS = { name: 'Ravi Kumar Testcase', mobile: '9876543210', password: 'demo-Secret-4821', dob: ['01', '15', '1950'] };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const readLog = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8') : '');
@@ -160,6 +173,7 @@ async function main() {
   if (!(health.mock && health.speech === 'mock') && process.env.KOODE_E2E_ALLOW_PAID !== '1') {
     throw new Error(`refusing to run: backend must be MOCK planner + MOCK speech (got provider=${health.provider}, speech=${health.speech}). Start it with KOODE_PROVIDER=mock KOODE_SPEECH=mock.`);
   }
+  if (PREGRANT) EXT = pregrantedExtension(EXT);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-journey-'));
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromePath(), headless: !headed, viewport: { width: 1280, height: 800 },
@@ -175,6 +189,14 @@ async function main() {
     if (!file.startsWith(path.join(ROOT, 'demo-site')) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
     const type = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' }[path.extname(file)] || 'application/octet-stream';
     return route.fulfill({ status: 200, contentType: type, body: fs.readFileSync(file) });
+  });
+  // A stand-in for "some other website" (origin guard) — never a real external request.
+  await ctx.route(/^https:\/\/not-official\.example\//, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Elsewhere</title><h1>Some other website (fixture)</h1>' }));
+  if (only !== 'real-services') await ctx.route(/^https:\/\/sarathi\.parivahan\.gov\.in\//, (route) => {
+    const u = new URL(route.request().url());
+    served.push(u.host + u.pathname);
+    if (route.request().resourceType() !== 'document') return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fs.readFileSync(path.join(FIX, 'sarathi.html')) });
   });
   if (only !== 'real') await ctx.route(/^https:\/\/(web\.whatsapp\.com|www\.youtube\.com|docs\.google\.com)\//, (route) => {
     const u = new URL(route.request().url());
@@ -346,24 +368,21 @@ async function main() {
     check('G2b rule search "തെങ്ങ്" thin → one lazy intent call → "coconut tree malayalam"', g2b.length === 1 && resultsQuery() === 'coconut tree malayalam', { calls: g2b.length, query: resultsQuery() });
     run = await followSteps(page, 'g2b', { maxSteps: 3 });
 
-    // G3) Government service with personal data: redacted, not navigated, video offer only.
+    // G3) Licence request with personal data (M2): redacted locally; the verified service is offered as options
+    //     (official site / tutorial); nothing opens without a choice; no model call; numbers never in a URL.
     await page.goto('chrome://newtab/').catch(() => {});
     await sleep(500);
     ia = readIntentLog().length;
     const before = page.url();
     await speak(sp, 'എന്റെ ഡ്രൈവിംഗ് ലൈസൻസ് KL07 2019 0001234 വിവരങ്ങൾ അറിയണം, ഫോൺ 9847012345');
-    q = await waitPanel(sp, (x) => x.koodeIntentResult === 'service', 'service intent', 15000);
+    q = await waitPanel(sp, (x) => x.koodeOptions, 'service options', 15000);
     await sleep(800);
-    const g3i = intentEntries(ia);
-    const g3log = readIntentLog().slice(ia);
-    check('G3 licence request: licence and phone numbers redacted before the intent call (and Koode says so)',
-      q.koodeRedacted === 'DL_NUMBER,PHONE' && !/KL07|0001234|9847012345/.test(g3log) && /\[DL_NUMBER\]/.test(g3log) && /ലൈസൻസ് നമ്പർ/.test(q.koodeMl || ''),
-      { redacted: q.koodeRedacted, sent: g3i[0] && g3i[0].request.goal });
-    check('G3 government service is not opened (no verified site in M1); tab unchanged', page.url() === before && /സർക്കാർ വെബ്സൈറ്റുകൾ/.test(q.koodeMl || '') && (await sp.locator('#offer').count()) === 1,
-      { url: page.url(), ml: (q.koodeMl || '').slice(0, 80) });
-    await sp.locator('#offer').click();
+    check('G3 licence request: licence and phone numbers redacted (Koode says so); options card; no model call; tab unchanged',
+      q.koodeRedacted === 'DL_NUMBER,PHONE' && /ലൈസൻസ് നമ്പർ/.test(q.koodeMl || '') && q.koodeService === 'sarathi/dl_details' && intentEntries(ia).length === 0 && page.url() === before,
+      { redacted: q.koodeRedacted, service: q.koodeService, intentCalls: intentEntries(ia).length, url: page.url() });
+    await sp.locator('#opt-video').click();
     await page.waitForURL(/\/results\?search_query=/, { timeout: 10000 });
-    check('G3 user-chosen video offer searches the topic only (no personal numbers in the URL)', /ഡ്രൈവിംഗ് ലൈസൻസ്/.test(resultsQuery()) && !/\d{4}/.test(page.url()), resultsQuery());
+    check('G3 user-chosen tutorial searches the topic only (no personal numbers in the URL)', /ഡ്രൈവിംഗ് ലൈസൻസ്/.test(resultsQuery()) && !/\d{4}/.test(page.url()), resultsQuery());
 
     // G4) Prompt injection: the (mock) model is made to answer with a URL; nothing navigates.
     await page.goto('chrome://newtab/').catch(() => {});
@@ -416,6 +435,217 @@ async function main() {
     check('G5 guidance continues in the new tab', run.state === 'done', run.state);
     await np.close(); await fp.close();
     await page.close();
+  }
+
+
+  // ---- M2: verified services ----
+  // Buttons inside the closed in-page panel, from its test dataset: "id:x,y,w,h;…".
+  const pageButton = async (pg, id) => {
+    const st = await waitPage(pg, (x) => (x.koodeButtons || '').split(';').some((b) => b.startsWith(id + ':')), 'in-page button ' + id, 5000);
+    const b = (st.koodeButtons || '').split(';').find((x) => x.startsWith(id + ':'));
+    if (!b) throw new Error('no in-page button ' + id + ' in ' + st.koodeButtons);
+    const [x, y, w, h] = b.split(':')[1].split(',').map(Number);
+    await pg.mouse.click(x + w / 2, y + h / 2);
+  };
+  // The user's own actions on the Sarathi pages (fake values; Koode never reads them).
+  const FAKE = { mobile: '9876500000', captcha: '7aFvDu' };
+  const sarathiAct = (pg) => async (el) => {
+    // The state list submits on change: open it, type-ahead inside the open list, then commit once with Enter.
+    if (el.tag === 'select') { await pg.mouse.click(el.rect[0] + el.rect[2] / 2, el.rect[1] + el.rect[3] / 2); await sleep(300); await pg.keyboard.type('Kerala', { delay: 30 }); await sleep(200); await pg.keyboard.press('Enter'); return; }
+    if (el.id === 'mobileNumber' || el.name === 'mobileNumber') { await perform(pg, el, FAKE.mobile); return pg.keyboard.press('Tab'); }
+    if (el.id === 'entcaptxt' || el.name === 'entcaptxt') { await perform(pg, el, FAKE.captcha); return pg.keyboard.press('Tab'); }
+    return perform(pg, el);
+  };
+
+  if (!budgetMode && only === 'services') {
+    const page = await ctx.newPage();
+    await page.goto('chrome://newtab/').catch(() => page.goto('about:blank'));
+    const tabId = (await tabIdOf('chrome://new')) || (await tabIdOf('about:blank'));
+    const sp = await openPanel(tabId);
+    await page.bringToFront();
+    let ia = readIntentLog().length, at = readLog().length;
+
+    // S1) Ambiguous goal → two options; nothing opens yet; no model call.
+    await speak(sp, 'എനിക്ക് ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം');
+    let q = await waitPanel(sp, (x) => x.koodeOptions, 'options card');
+    check('S1 "ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ അറിയണം" → options: official website / Malayalam tutorial (rule, no model, no navigation)',
+      q.koodeIntent === 'service' && q.koodeService === 'sarathi/dl_details' && (await sp.locator('#opt-official').count()) === 1 && (await sp.locator('#opt-video').count()) === 1 &&
+      /^chrome:\/\/new|about:blank/.test(page.url()) && intentEntries(ia).length === 0, { route: q.koodeIntent, service: q.koodeService, url: page.url(), ml: (q.koodeMl || '').slice(0, 60) });
+
+    // S2) "ഒന്ന്" (one) by voice → confirmation card with the verified host; still nothing opens.
+    await speak(sp, 'ഒന്ന്');
+    q = await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'confirm card');
+    check('S2 voice "ഒന്ന്" → explicit confirmation card naming sarathi.parivahan.gov.in and the verification date; no navigation yet',
+      /sarathi\.parivahan\.gov\.in/.test(q.koodeMl || '') && /2026-11-22/.test(q.koodeMl || '') && (await sp.locator('#svc-yes').count()) === 1 && /^chrome:\/\/new|about:blank/.test(page.url()), (q.koodeMl || '').slice(0, 120));
+
+    // S3) ✓ → catalogue URL → grounded guidance through the real route to the DL Search form → hand-off at "Generate OTP".
+    await sp.locator('#svc-yes').click();
+    await page.waitForURL(/sarathi\.parivahan\.gov\.in\/sarathiservice\/stateSelection\.do/, { timeout: 15000 });
+    check('S3 ✓ opens exactly the catalogue entry URL', page.url() === 'https://sarathi.parivahan.gov.in/sarathiservice/stateSelection.do', page.url());
+    const sv = await followSteps(page, 'sarathi', { maxSteps: 10, act: sarathiAct(page) });
+    const labels = sv.steps.map((x) => x.target);
+    const s3req = logEntries(at).filter((e) => e.request);
+    check('S3 popup over the state list: covered controls left out (popup flag) and the arrow goes to its × first',
+      labels[0] === '×' && s3req[0] && s3req[0].request.snapshot.popup === true && !s3req[0].request.snapshot.candidates.some((c) => c.role === 'combobox'),
+      { first: labels[0], popup: s3req[0] && s3req[0].request.snapshot.popup });
+    check('S3 then arrows follow the verified route: state list → Skip → Others → DL Search → Mobile Number → Captcha → Generate OTP',
+      sv.state === 'done' && /dlSearch\.do/.test(page.url()) && labels.length === 8 && /Skip/.test(labels[2]) && /Others/.test(labels[3]) && /DL Search/.test(labels[4]) &&
+      /Mobile Number/i.test(labels[5]) && /Captcha/i.test(labels[6]) && /Generate OTP/.test(labels[7]), { state: sv.state, labels, url: page.url() });
+    const ps = await pageState(page);
+    check('S3 hand-off after "Generate OTP": the user continues with the OTP alone; Koode stops reading the page',
+      /OTP/.test(ps.koodeInstruction || '') && /stops reading/.test(ps.koodeInstruction || '') && /Service hand-off rule/.test(sv.planner || ''), { instruction: ps.koodeInstruction, planner: sv.planner });
+    check('S3 "check your details" pause before Generate OTP', ps.koodeCheckPause === 'Generate OTP', ps.koodeCheckPause);
+    const sreq = logEntries(at).filter((e) => e.request);
+    const sjson = JSON.stringify(sreq);
+    check('S3 planner saw the catalogue TASK_HINT, Kerala in the 40-option state list, and never the typed mobile number or captcha',
+      sreq.length >= 7 && sreq.every((e) => /Sarathi Parivahan/.test(e.request.task_hint || '')) && sreq.some((e) => e.request.snapshot.candidates.some((c) => (c.options || []).includes('Kerala'))) &&
+      !sjson.includes(FAKE.mobile) && !sjson.includes(FAKE.captcha) && !sreq.some((e) => (e.request.snapshot.context || []).some((c) => /OTP sent/.test(c.text))),
+      { calls: sreq.length, hint: (sreq[0] && sreq[0].request.task_hint || '').slice(0, 60) });
+    const capt = sreq.flatMap((e) => e.request.snapshot.candidates).find((c) => /captcha/i.test(c.label || ''));
+    check('S3 captcha field is marked sensitive (user types it; value never read)', capt && capt.sensitive === true, capt);
+
+    // S4) Explicit official request → straight to the confirmation (no options); then the origin guard.
+    // (Already on Sarathi, a licence request is guided on the current page; S4 starts from another page.)
+    await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കണം');
+    const here4 = await waitPanel(sp, (x) => x.koodeIntent === 'guide' || x.koodeConfirmService || x.koodeOptions, 'on-site request', 10000);
+    check('S3b already on the official site: a further licence request is guided on this page (no options, no second confirmation)',
+      here4.koodeIntent === 'guide' && !here4.koodeConfirmService && !here4.koodeOptions && /sarathi\.parivahan\.gov\.in/.test(page.url()), { intent: here4.koodeIntent, where: here4.koodeWhere });
+    await page.goto('chrome://newtab/').catch(() => {});
+    await sleep(400);
+    ia = readIntentLog().length;
+    await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കാൻ ഔദ്യോഗിക വെബ്സൈറ്റ് തുറക്കൂ');
+    q = await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'direct confirm');
+    check('S4 explicit "ഔദ്യോഗിക വെബ്സൈറ്റ്" → confirmation card directly (no options card)', !q.koodeOptions && q.koodeService === 'sarathi/dl_renewal', { options: q.koodeOptions, service: q.koodeService });
+    await speak(sp, 'ശരി'); // access was granted before (test copy), so a spoken yes is enough
+    await page.waitForURL(/stateSelection\.do/, { timeout: 15000 });
+    await waitPage(page, (x) => x.koodeState === 'waiting', 'first renewal arrow', 20000);
+    await page.goto('https://not-official.example/phish');
+    q = await waitPanel(sp, (x) => x.koodeOffSite === 'true', 'off-site notice', 10000);
+    const ss4 = await session(tabId);
+    check('S4 origin guard: leaving the verified host mid-task pauses guidance with "ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല" and forgets the task',
+      /ഔദ്യോഗിക സൈറ്റ് അല്ല/.test(q.koodeMl || '') && !ss4['task:' + tabId], { ml: (q.koodeMl || '').slice(0, 50), session: Object.keys(ss4) });
+
+    // S5) Explicit video → tutorial search (M1), no options.
+    await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ വീഡിയോ');
+    await page.waitForURL(/www\.youtube\.com\/results/, { timeout: 15000 });
+    check('S5 explicit "വീഡിയോ" → Malayalam tutorial search directly', new URL(page.url()).searchParams.get('search_query') === 'ഡ്രൈവിംഗ് ലൈസൻസ് പുതുക്കൽ ഓൺലൈൻ', page.url());
+
+    // S6) Options → official → "വേണ്ട" (no) → nothing opens.
+    await page.goto('chrome://newtab/').catch(() => {});
+    await sleep(400);
+    await speak(sp, 'ലേണേഴ്സ് ലൈസൻസിന് അപേക്ഷിക്കണം');
+    await waitPanel(sp, (x) => x.koodeOptions, 'options (learner)');
+    await sp.locator('#opt-official').click();
+    await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'confirm (learner)');
+    await speak(sp, 'വേണ്ട');
+    q = await waitPanel(sp, (x) => x.koodeAnswer === 'no', 'cancelled');
+    await sleep(800);
+    check('S6 "വേണ്ട" on the confirmation → nothing opens', /^chrome:\/\/new|about:blank/.test(page.url()) && /തുറക്കുന്നില്ല/.test(q.koodeMl || ''), { url: page.url(), ml: q.koodeMl });
+
+    // S7) No verified destination → clear explanation; no automatic redirect (a tutorial is only offered).
+    ia = readIntentLog().length;
+    await speak(sp, 'എനിക്ക് റേഷൻ കാർഡ് അപേക്ഷിക്കണം');
+    q = await waitPanel(sp, (x) => x.koodeIntentResult, 'unverified service', 15000);
+    await sleep(1000);
+    check('S7 unverified service (ration card) → "official website not verified" explanation; no navigation; tutorial only offered',
+      q.koodeIntentResult === 'service' && /പരിശോധിച്ച് ഉറപ്പാക്കിയിട്ടില്ല/.test(q.koodeMl || '') && /^chrome:\/\/new|about:blank/.test(page.url()) && (await sp.locator('#offer').count()) === 1,
+      { result: q.koodeIntentResult, url: page.url(), ml: (q.koodeMl || '').slice(0, 70) });
+
+    // S8) Model output: a catalogue id is accepted, a URL/host as "service_id" is not.
+    await fetch(BACKEND + '/test/intent-queue', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outputs: ['{"type":"service","service_id":"https://evil.gov.in/login","wants":"official"}', '{"type":"service","service_id":"sarathi","subservice_id":"learner_licence","wants":"unspecified"}'] }) });
+    await speak(sp, 'വണ്ടി ഓടിക്കാൻ ലൈസൻസ് എടുക്കണം');
+    q = await waitPanel(sp, (x) => x.koodeIntentResult, 'injected service id', 15000);
+    await sleep(800);
+    check('S8 a model "service_id" that is a URL is rejected → explanation, no navigation', !q.koodeConfirmService && !q.koodeOptions && /പരിശോധിച്ച്/.test(q.koodeMl || '') && /^chrome:\/\/new|about:blank/.test(page.url()), { ml: (q.koodeMl || '').slice(0, 60) });
+    await speak(sp, 'വണ്ടി ഓടിക്കാൻ ലൈസൻസ് എടുക്കണം');
+    q = await waitPanel(sp, (x) => x.koodeOptions, 'model-nominated catalogue id', 15000);
+    check('S8 a model-nominated catalogue id ("sarathi"/learner_licence) → options card', q.koodeService === 'sarathi/learner_licence', q.koodeService);
+
+    // S9) Privacy: a spoken licence number never leaves the browser.
+    await speak(sp, 'എന്റെ ഡ്രൈവിംഗ് ലൈസൻസ് KL07 2019 0001234 വിവരങ്ങൾ വെബ്സൈറ്റിൽ നോക്കണം');
+    q = await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi' && x.koodeRedacted, 'redacted service request');
+    await sp.locator('#svc-yes').click();
+    await page.waitForURL(/stateSelection\.do/, { timeout: 15000 });
+    await waitPage(page, (x) => x.koodeState === 'waiting', 'arrow after redacted request', 20000);
+    const t9 = (await session(tabId))['task:' + tabId];
+    check('S9 licence number redacted before the task store and planner ([DL_NUMBER]); Koode says so', q.koodeRedacted === 'DL_NUMBER' && t9 && /\[DL_NUMBER\]/.test(t9.goal) && !/0001234/.test(JSON.stringify(t9)), t9 && t9.goal);
+    await sp.close(); await page.close();
+  }
+
+  if (!budgetMode && (!only || only === 'grant')) {
+    // Real optional-permission extension (not pre-granted): nothing runs on the government host until the user allows it.
+    const g = await ctx.newPage();
+    await g.goto(DEMO_ORIGIN + '/demo/form.html');
+    await g.waitForSelector('#koode-panel-root', { state: 'attached', timeout: 8000 });
+    const granted0 = await sw.evaluate(() => chrome.permissions.contains({ origins: ['https://sarathi.parivahan.gov.in/*'] }));
+    const scripts0 = await sw.evaluate(async () => (await chrome.scripting.getRegisteredContentScripts()).map((r) => r.id));
+    check('G-1 install: no access to sarathi.parivahan.gov.in and no content script registered for it', granted0 === false && !scripts0.length, { granted0, scripts0 });
+    const vp = g.viewportSize();
+    await g.mouse.click(vp.width - 49, vp.height - 49);
+    await waitPage(g, (x) => x.koodeOpen === 'true', 'in-page panel open', 5000);
+    await g.keyboard.type('ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ ഔദ്യോഗിക സൈറ്റിൽ നോക്കണം'); await g.keyboard.press('Enter');
+    await waitPage(g, (x) => x.koodeConfirmService === 'sarathi', 'in-page confirm', 8000);
+    const grantPage = ctx.waitForEvent('page', { timeout: 10000 });
+    await pageButton(g, 'svc-yes');
+    const gp = await grantPage;
+    await gp.waitForFunction(() => document.body.dataset.koodeGrantReady, null, { timeout: 8000 });
+    const gtext = await gp.locator('#what').innerText();
+    const gs = await pageState(g);
+    check('G-2 in-page ✓ without access → one-time Koode grant page for exactly sarathi.parivahan.gov.in; the form tab is not navigated',
+      /sarathi\.parivahan\.gov\.in/.test(gtext) && /\/demo\/form\.html/.test(g.url()) && gs.koodeNeedGrant === 'true', { gtext, url: g.url() });
+    await gp.screenshot({ path: path.join(ARTIFACTS, 'grant-page.png') });
+    await gp.close();
+    // Side panel: a spoken "ശരി" cannot trigger Chrome's prompt → asks for the ✓ button.
+    const nt = await ctx.newPage();
+    await nt.goto('chrome://newtab/').catch(() => {});
+    const ntId = await tabIdOf('chrome://new');
+    const sp = await openPanel(ntId);
+    await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ ഔദ്യോഗിക സൈറ്റിൽ നോക്കണം');
+    await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'panel confirm');
+    await speak(sp, 'ശരി');
+    const q = await waitPanel(sp, (x) => x.koodeNeedGrant === 'true', 'needs ✓ for Chrome access', 8000);
+    check('G-3 spoken "ശരി" without access → asks to press ✓ (Chrome prompt needs a click); nothing opened', /^chrome:\/\/new|about:blank/.test(nt.url()) && /✓/.test(q.koodeMl || ''), { url: nt.url(), ml: (q.koodeMl || '').slice(0, 60) });
+    await sp.close(); await nt.close(); await g.close();
+  }
+
+  if (!budgetMode && only === 'real-services') {
+    // Real sarathi.parivahan.gov.in, logged out, mock planner: arrows along the verified route up to the mobile-number field.
+    // Types nothing into the real site and never presses Generate OTP.
+    const page = await ctx.newPage();
+    await page.goto('chrome://newtab/').catch(() => {});
+    const tabId = await tabIdOf('chrome://new');
+    const sp = await openPanel(tabId);
+    await page.bringToFront();
+    const at = readLog().length;
+    await speak(sp, 'ഡ്രൈവിംഗ് ലൈസൻസ് വിവരങ്ങൾ ഔദ്യോഗിക സൈറ്റിൽ നോക്കണം');
+    await waitPanel(sp, (x) => x.koodeConfirmService === 'sarathi', 'confirm');
+    await sp.locator('#svc-yes').click();
+    await page.waitForURL(/sarathi\.parivahan\.gov\.in/, { timeout: 20000 });
+    const steps = [];
+    let last = 0;
+    for (let i = 0; i < 8; i++) {
+      const p = await waitPage(page, (x) => (x.koodeState === 'waiting' && Number(x.koodeStep) > last && x.overlay && x.overlay.koodeTip) || ['done', 'error', 'idle'].includes(x.koodeState) && Number(x.koodeEvents) > 3, 'real sarathi arrow', 45000).catch((e) => ({ error: e.message.slice(0, 200) }));
+      if (p.koodeState !== 'waiting') { steps.push({ state: p.koodeState, instruction: p.koodeInstruction, error: p.error }); break; }
+      last = Number(p.koodeStep);
+      await sleep(400);
+      const el = await pointedElement(page);
+      steps.push({ step: last, target: p.koodeTarget, pointed: el && { tag: el.tag, id: el.id, name: el.name, label: el.label } });
+      await page.screenshot({ path: path.join(ARTIFACTS, `real-sarathi-step${last}.png`) });
+      if (el && (el.id === 'mobileNumber' || el.name === 'mobileNumber' || /mobile/i.test(p.koodeTarget || ''))) break; // stop before typing anything
+      await sarathiAct(page)(el);
+    }
+    results.realSarathi = steps;
+    const lastStep = steps[steps.length - 1] || {};
+    check('real Sarathi: arrows on the live site along (popup ×) → state → Skip → Others → DL Search → Mobile Number (nothing typed)',
+      /mobile/i.test(lastStep.target || '') && /dlSearch\.do/.test(page.url()), steps.map((x) => x.target || x.state));
+    check('real Sarathi: every arrow pointed at the element it named (nothing covered by a popup)',
+      // Form controls (select / input buttons and fields) carry their name in value/placeholder, not text.
+      steps.filter((x) => x.pointed).every((x) => ['select', 'input'].includes(x.pointed.tag) || ((x.pointed.label || '').includes((x.target || '').trim()) && (x.target || '').trim().length > 0)),
+      steps.map((x) => x.pointed && [x.target, x.pointed.tag, (x.pointed.label || '').slice(0, 30)]));
+    const reqs = logEntries(at).filter((e) => e.request);
+    results.realSarathiPayload = reqs.map((e) => ({ path: e.request.snapshot.path, candidates: e.request.snapshot.candidates.length, chars: JSON.stringify(e.request).length }));
+    await sp.close();
   }
 
   if (!budgetMode && (!only || only === 'editor')) {

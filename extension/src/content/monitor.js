@@ -108,6 +108,7 @@
     on('click', async (e) => {
       if (!e.isTrusted || isKoodeUi(e.target) || !isCurrent()) return;
       if (isOnTarget(e.target, target)) {
+        st.touchedTarget = true;
         // Clicking a radio that is already selected leaves it selected: that is the requested state.
         if (kind === 'check' && initialChecked && K.extractor.implicitRole(target.el) === 'radio') {
           setTimeout(() => { if (isCurrent() && isChecked(target.el)) verify({ evidence: 'already_selected', checked: true }); }, 200);
@@ -157,6 +158,7 @@
 
     on('change', (e) => {
       if (!e.isTrusted || !isOnTarget(e.target, target)) return;
+      st.touchedTarget = true;
       if (kind === 'select') {
         const opt = target.el.options[target.el.selectedIndex];
         if (target.el.selectedIndex !== initialIndex && opt && opt.value !== '') verify({ evidence: 'selection_changed' });
@@ -174,7 +176,9 @@
       st.cleanup.push(() => mo.disconnect());
     }
 
-    const onHide = () => { if (isCurrent()) cb.navigating({ on_target: !!st.lastClickOnTarget }); };
+    // A page that navigates right after the user used the target (e.g. a state list that submits on change)
+    // was navigated by the requested action.
+    const onHide = () => { if (isCurrent()) cb.navigating({ on_target: !!st.lastClickOnTarget || (kind !== 'click' && !!st.touchedTarget) }); };
     window.addEventListener('pagehide', onHide);
     st.cleanup.push(() => window.removeEventListener('pagehide', onHide));
     return kind;
