@@ -20,6 +20,14 @@ const DEFAULT_MODELS = {
   mock: 'mock-test-harness'
 };
 
+function speechMode() {
+  if (env.KOODE_SPEECH === 'mock') {
+    if (env.KOODE_REQUIRE_LLM === '1') throw new Error('KOODE_SPEECH=mock is not allowed with KOODE_REQUIRE_LLM=1 (judging mode)');
+    return 'mock';
+  }
+  return env.SARVAM_API_KEY ? 'sarvam' : null;
+}
+
 export function loadConfig() {
   const provider = detectProvider();
   // KOODE_REQUIRE_LLM=1: refuse to start on the mock planner (used for real-model testing).
@@ -46,6 +54,8 @@ export function loadConfig() {
   sttLanguage: env.KOODE_STT_LANGUAGE || 'ml-IN',
   ttsModel: env.KOODE_TTS_MODEL || 'bulbul:v3',
   ttsSpeaker: env.KOODE_TTS_SPEAKER || '',
-  speechTimeoutMs: Number(env.KOODE_SPEECH_TIMEOUT_MS || 20000)
+  speechTimeoutMs: Number(env.KOODE_SPEECH_TIMEOUT_MS || 20000),
+  // KOODE_SPEECH=mock: offline labelled speech stand-in (tests/rehearsal); never with KOODE_REQUIRE_LLM=1.
+  speech: speechMode()
   };
 }

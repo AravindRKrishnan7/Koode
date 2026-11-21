@@ -41,7 +41,7 @@ The verifiable action (click / fill / check / select) is derived from the elemen
 
 ## POST /api/stt and /api/tts (extension → backend → Sarvam)
 
-Voice is optional (`/health` reports `"voice": true` when `SARVAM_API_KEY` is set). The key never leaves the backend.
+Voice is optional (`/health` reports `"voice": true` and `"speech": "sarvam"` when `SARVAM_API_KEY` is set, or `"speech": "mock"` with `KOODE_SPEECH=mock`: a labelled offline stand-in for tests that returns transcripts queued via `POST /test/stt-queue` (local clients only) and a chime for replies). The key never leaves the backend.
 
 ```jsonc
 // /api/stt  request: push-to-talk clip (≤ 25 s), base64     response:
@@ -51,3 +51,56 @@ Voice is optional (`/health` reports `"voice": true` when `SARVAM_API_KEY` is se
 ```
 
 The transcript is used as the goal for `/api/plan`, exactly like typed text. Spoken replies play only for voice-started tasks.
+
+## POST /api/intent (extension → backend), M1
+
+Open-ended requests that the rule router can't place (`classify()` → `intent`). The extension redacts personal
+numbers first (`extension/src/shared/goals.js`); the backend redacts again before building the prompt.
+
+```jsonc
+// request                                         // response (validated; nothing outside this schema survives)
+{ "goal": "എനിക്ക് തെങ്ങ് കയറാൻ പഠിക്കണം",          { "type": "youtube_search",      // youtube_search | service | on_page | ask | unsupported
+  "site_id": "whatsapp" }                            "query_ml": "തെങ്ങ് കയറാൻ", "query_en": "coconut tree climbing",
+                                                     "content_lang": "ml", "question_ml": "",
+                                                     "redacted": [], "planner": { "provider": "groq", "model": "…", "mock": false },
+                                                     "latency_ms": 900, "attempts": 1 }
+```
+
+- Queries are plain words, ≤ 80 chars: URLs, domain-like tokens, `site:`/`-x`/`OR` operators, `@`/`#` tokens,
+  placeholders such as `[PHONE]`, personal numbers and non-Latin/non-Malayalam characters are stripped; unsafe
+  topics turn the answer into `unsupported`. Unknown types or no usable query → one corrective retry → `ask`.
+- The model never supplies a URL. The service worker re-validates the query and builds the only possible URL,
+  `https://www.youtube.com/results?search_query=…`.
+- `service` (government/official services) is **not navigable in M1**: Koode says so and offers a how-to video
+  search, which runs only if the user presses it.
+- Language: Malayalam query first; if the results page shows fewer than 3 videos, one fallback search with the
+  English query plus the content language (`… malayalam`). An explicitly requested language ("ഇംഗ്ലീഷിൽ",
+  "in hindi") is kept.
+- Audit log: `backend/logs/intent-requests.jsonl` (sanitised request + validated result).
+- Test-only: `POST /test/intent-queue {"outputs":["<raw model text>", …]}` (mock planner, local clients only)
+  queues raw "model outputs" that go through the same validation.
+
+## M2: verified services
+
+**Catalogue** (`extension/src/shared/catalogue.js`): the only destinations Koode opens for a service. Each entry has
+`id`, `kind`, names (en/ml), `entry` URL, exact `hosts`, `verified { on, by, evidence[], recheck_by }`, `topic` words and
+`services[] { id, en, ml, words, hint, handoff, video }`. Entries are added only after checking the live site (TLS,
+operator, an independent link from a parent official site). First entry: Sarathi Parivahan
+(`https://sarathi.parivahan.gov.in/sarathiservice/stateSelection.do`, linked from parivahan.gov.in).
+
+**`/api/intent` additions:** `service_id` (a catalogue id or `""`), `subservice_id`, `wants` (`official | video |
+unspecified`). The prompt receives `VERIFIED_SERVICES` (ids and descriptions, no URLs); anything that isn't a
+catalogue id is dropped, and the UI explains that no verified website exists.
+
+**`/api/plan` additions:** optional `task_hint` (≤ 400 chars, from the catalogue, redacted) → `TASK_HINT` in the prompt;
+`snapshot.popup: true` when a popup covers the page (covered controls are left out). Labels and context texts are
+redacted (personal numbers) server-side. Select lists keep up to 40 options (state lists).
+
+**Permissions:** `optional_host_permissions` per catalogue host; content scripts for a host are registered with
+`chrome.scripting.registerContentScripts` only after the user grants it (static `content_scripts` matches would
+grant it at install). The side panel's ✓ calls `chrome.permissions.request` from the click; the in-page panel opens
+`src/sidepanel/grant.html` (pages cannot request permissions).
+
+**Service worker messages:** `koode:openService { serviceId, subId, goal, voice }` (URL from the catalogue only;
+returns `permission_needed` / `needsGrant`), `koode:serviceStatus`, `koode:grantInfo`. Origin guard: a service task
+whose tab leaves the entry's hosts is dropped and the panel shows "ഇത് ഔദ്യോഗിക സൈറ്റ് അല്ല".

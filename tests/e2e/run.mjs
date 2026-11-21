@@ -25,6 +25,13 @@ const repeat = args.includes('--repeat') ? Number(args[args.indexOf('--repeat') 
 
 function chromePath() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  // Chrome for Testing installed by `npx @puppeteer/browsers install chrome@stable --path ~/.cache/koode-cft`.
+  const cft = path.join(os.homedir(), '.cache', 'koode-cft', 'chrome');
+  if (fs.existsSync(cft)) {
+    const v = fs.readdirSync(cft).filter((d) => d.startsWith('mac')).sort().pop();
+    const app = v && path.join(cft, v, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');
+    if (app && fs.existsSync(app)) return app;
+  }
   const base = '/opt/.devin/chrome/chrome';
   if (fs.existsSync(base)) {
     const v = fs.readdirSync(base).filter((d) => d.startsWith('linux-')).sort().pop();
@@ -156,6 +163,15 @@ async function perform(page, el) {
     if (el.type === 'date') { for (const part of SECRETS.dob) await page.keyboard.type(part); }
     else await page.keyboard.type(el.type === 'tel' ? SECRETS.mobile : el.type === 'password' ? SECRETS.password : SECRETS.name, { delay: 15 });
     await page.keyboard.press('Tab');
+  } else if (el.tag === 'select' && process.platform === 'darwin') {
+    // macOS opens a native popup on click (Enter would then submit the form): close it, choose by type-ahead.
+    await page.mouse.click(x + w / 2, cy);
+    await sleep(200);
+    await page.keyboard.press('Escape');
+    await sleep(100);
+    await page.keyboard.type('Er');
+    await sleep(150);
+    await page.keyboard.press('Tab');
   } else if (el.tag === 'select') {
     await page.mouse.click(x + w / 2, cy);
     await sleep(200);
@@ -255,6 +271,10 @@ async function guidedRun(page, name, { goal, voice = false, preStarted = false, 
 async function main() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const health = await fetch(BACKEND + '/health').then((r) => r.json());
+  // Quota guard: real Groq / Sarvam only with an explicit opt-in.
+  if ((!health.mock || health.speech === 'sarvam') && process.env.KOODE_E2E_ALLOW_PAID !== '1') {
+    throw new Error(`refusing to spend model/speech quota (provider=${health.provider}, speech=${health.speech}); use KOODE_PROVIDER=mock KOODE_SPEECH=mock, or set KOODE_E2E_ALLOW_PAID=1`);
+  }
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-e2e-'));
   const wantVoice = (!only || ['voice', 'mic-denied', 'voice-fail'].includes(only)) && health.voice;
   const fixture = wantVoice ? await voiceFixture() : null;
@@ -267,6 +287,11 @@ async function main() {
     viewport: { width: 1280, height: 800 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check', ...micArgs]
   });
+  // A backend on another port: point the extension at it (chrome.storage.local backendUrl override).
+  if (BACKEND !== 'http://localhost:8787') {
+    const sw = ctx.serviceWorkers()[0] || (await ctx.waitForEvent('serviceworker', { timeout: 10000 }));
+    await sw.evaluate((u) => chrome.storage.local.set({ backendUrl: u }), BACKEND);
+  }
   const version = ctx.browser() ? ctx.browser().version() : (await (await ctx.newCDPSession(await ctx.newPage())).send('Browser.getVersion')).product;
   const logStart = readLog().length;
   const results = { browser: version, backend: health, startedAt: new Date().toISOString(), runs: [] };
@@ -309,12 +334,15 @@ async function main() {
       } else if (kind === 'voice') {
         await page.goto(BACKEND + '/demo/settings.html?layout=b');
         const at = readLog().length;
+        // Mock speech returns queued transcripts (the fake-mic audio is not decoded).
+        if (health.speech === 'mock') await fetch(BACKEND + '/test/stt-queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transcripts: [VOICE_GOAL] }) });
         const run = await guidedRun(page, name, { goal: VOICE_GOAL, voice: true, maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] });
         // The transcript only exists server-side; read it back from the first planner request of this run.
         const first = readLog().slice(at).split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.request);
         run.transcript = first ? first.request.goal : null;
         const norm = (s) => (s || '').replace(/[\s.,!?।]+/g, '');
         run.transcriptExact = norm(run.transcript) === norm(VOICE_GOAL);
+        if (health.speech === 'mock') run.transcriptNote = 'mock speech: transcript was queued by the test, not recognised';
         results.runs.push(run);
       } else if (kind === 'mic-denied' || kind === 'voice-fail') {
         // Voice fails (mic permission denied / speech API rejects the key): Koode must explain and the typed fallback must still work.

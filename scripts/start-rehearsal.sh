@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # SIMULATION / REHEARSAL MODE: mock planner (scripted targets, NOT AI). Uses no Groq quota.
 # Voice (Sarvam) stays real if SARVAM_API_KEY is available, so the microphone path can be rehearsed.
+# KOODE_SPEECH=mock scripts/start-rehearsal.sh: offline labelled mock speech instead (no Sarvam credits;
+# the mock cannot understand audio: it returns transcripts queued via POST /test/stt-queue or KOODE_MOCK_TRANSCRIPT).
 source "$(dirname "$0")/_common.sh"
 node_ok; port_free
 get_key SARVAM_API_KEY koode-sarvam 0
@@ -13,5 +15,7 @@ cat >&2 <<'BANNER'
 #  Do NOT use this mode in front of judges.                   #
 ################################################################
 BANNER
-[ -n "${SARVAM_API_KEY:-}" ] && echo "Voice: real Sarvam STT/TTS" >&2 || echo "Voice: off (no SARVAM_API_KEY) — typing only" >&2
+if [ "${KOODE_SPEECH:-}" = mock ]; then echo "Voice: MOCK speech (not Sarvam) — queued transcripts, chime replies" >&2
+elif [ -n "${SARVAM_API_KEY:-}" ]; then echo "Voice: real Sarvam STT/TTS" >&2
+else echo "Voice: off (no SARVAM_API_KEY) — typing only" >&2; fi
 cd "$KOODE_ROOT/backend" && exec node src/server.js

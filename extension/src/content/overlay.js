@@ -18,7 +18,7 @@
     .arrow { position: fixed; width: 64px; height: 40px; transform-origin: 100% 50%; }
     .arrow svg { width: 64px; height: 40px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); animation: nudge 1s ease-in-out infinite; }
     @keyframes nudge { 50% { transform: translateX(-8px); } }
-    .bubble { position: fixed; max-width: 260px; background: #1f2340; color: #fff; font: 600 13px/1.35 "Noto Sans Malayalam","Noto Sans",system-ui,sans-serif;
+    .bubble { position: fixed; max-width: 260px; background: #2a1c10; color: #fff; font: 600 13px/1.35 "Noto Sans Malayalam","Noto Sans",system-ui,sans-serif;
       padding: 7px 10px; border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,.25); }
     .ring.enter { animation: enter .35s ease-out, pulse 1.4s ease-in-out .35s infinite; }
     @keyframes enter { 0% { transform: scale(1.6); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
