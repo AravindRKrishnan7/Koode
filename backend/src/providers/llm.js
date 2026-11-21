@@ -23,6 +23,7 @@ async function post(url, headers, body, timeoutMs, meta = {}) {
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctrl.signal });
       const text = await res.text();
       const wait = res.status === 429 ? retryAfterMs(res, text) + 250 : 0;
+      if (res.status === 429) console.warn(`[llm] 429, wait ${wait}ms: ${((text.match(/"message":\s*"([^"]{0,160})/) || [])[1] || '').replace(/org_\w+/g, 'org_*')}`);
       if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES && (meta.rateLimitWaitMs || 0) + wait <= MAX_RATE_LIMIT_WAIT_MS) {
         meta.rateLimitWaitMs = (meta.rateLimitWaitMs || 0) + wait;
         await sleep(wait);
@@ -30,9 +31,10 @@ async function post(url, headers, body, timeoutMs, meta = {}) {
       }
       if (res.status === 429) {
         // Out of back-off budget: tell the client how long to wait instead of a raw provider error.
-        const err = new Error('model rate limit reached');
+        const err = new Error(`model rate limit reached (provider asks to wait ${Math.round(wait / 1000)} s)`);
         err.code = 'rate_limited';
         err.retryAfterMs = wait;
+        err.scope = /per day|TPD|RPD/i.test(text) ? 'day' : 'minute';
         throw err;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
@@ -66,7 +68,7 @@ export async function complete(cfg, system, user, meta = {}) {
     case 'groq':
       // gpt-oss models are reasoning models; low effort keeps per-step latency down.
       return openaiCompatible({ baseUrl: cfg.groqBaseUrl, key: keys.groq, model, system, user, timeoutMs, meta,
-        extraBody: /gpt-oss/.test(model) ? { reasoning_effort: cfg.reasoningEffort } : {} });
+        extraBody: /gpt-oss/.test(model) ? { reasoning_effort: cfg.reasoningEffort, max_completion_tokens: 1024 } : {} });
     case 'openai':
       return openaiCompatible({ baseUrl: cfg.openaiBaseUrl, key: keys.openai, model, system, user, timeoutMs });
     case 'sarvam':

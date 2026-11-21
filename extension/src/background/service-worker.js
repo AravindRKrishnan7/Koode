@@ -21,7 +21,7 @@ async function api(route, payload) {
     return { error: 'Koode backend not reachable', code: 'offline' };
   }
   const body = await res.json().catch(() => ({ error: 'bad JSON from backend' }));
-  if (!res.ok) return { error: body.error || 'backend HTTP ' + res.status, code: body.code, retry_after_ms: body.retry_after_ms };
+  if (!res.ok) return { error: body.error || 'backend HTTP ' + res.status, code: body.code, retry_after_ms: body.retry_after_ms, scope: body.scope };
   return body;
 }
 

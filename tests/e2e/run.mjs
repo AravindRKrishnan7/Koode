@@ -181,6 +181,7 @@ async function guidedRun(page, name, { goal, voice = false, preStarted = false, 
     const c = await waitFor(page, (q) => (q.koodeState === 'confirm' && q.koodeConfirmRect) || q.koodeState === 'idle', 'transcript confirmation', 20000);
     if (c.koodeState !== 'confirm') { res.error = 'no confirmation: ' + c.koodeInstruction + ' | ' + c.koodeVoiceError; return res; }
     res.releaseToConfirmMs = Date.now() - released;
+    await shot(page, `${name}-confirm.png`);
     const [x, y, w, h] = c.koodeConfirmRect.split(',').map(Number);
     await page.mouse.click(x + w / 2, y + h / 2);
     confirmed = Date.now();
@@ -243,7 +244,9 @@ async function main() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-e2e-'));
   const wantVoice = (!only || ['voice', 'mic-denied', 'voice-fail'].includes(only)) && health.voice;
   const fixture = wantVoice ? await voiceFixture() : null;
-  const micArgs = fixture ? ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${fixture.file}`] : [];
+  // mic-denied: no auto-accept, and Chrome denies the permission prompt as a user clicking "Block" would.
+  const micArgs = !fixture ? [] : [only === 'mic-denied' ? '--deny-permission-prompts' : '--use-fake-ui-for-media-stream',
+    '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${fixture.file}`];
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromePath(),
     headless: !headed,
@@ -296,8 +299,6 @@ async function main() {
       } else if (kind === 'mic-denied' || kind === 'voice-fail') {
         // Voice fails (mic permission denied / speech API rejects the key): Koode must explain and the typed fallback must still work.
         await page.goto(BACKEND + '/demo/settings.html?layout=b');
-        const cdp = await ctx.newCDPSession(page);
-        if (kind === 'mic-denied') await cdp.send('Browser.setPermission', { permission: { name: 'audioCapture' }, setting: 'denied', origin: new URL(BACKEND).origin });
         await page.waitForSelector('#koode-panel-root', { state: 'attached', timeout: 10000 });
         const vp = page.viewportSize();
         await page.mouse.click(vp.width - 49, vp.height - 49);
@@ -309,7 +310,6 @@ async function main() {
         await page.mouse.up();
         const p = await waitFor(page, (q) => q.koodeState === 'idle' && q.koodeVoiceError, 'voice fallback', 20000);
         await shot(page, `${kind}-fallback.png`);
-        if (kind === 'mic-denied') await cdp.send('Browser.setPermission', { permission: { name: 'audioCapture' }, setting: 'granted', origin: new URL(BACKEND).origin });
         await page.keyboard.type(VOICE_GOAL); // Koode focused the text box as the fallback
         await page.keyboard.press('Enter');
         const run = await guidedRun(page, kind, { goal: VOICE_GOAL, preStarted: true, maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] });

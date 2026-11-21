@@ -47,7 +47,7 @@
     if (my !== S.token || !S.active) return;
     panel.setNotice('');
     const ms = Math.round(performance.now() - t0);
-    if (resp && resp.code === 'rate_limited') return rateLimited(my, lastEvent, resp.retry_after_ms);
+    if (resp && resp.code === 'rate_limited') return rateLimited(my, lastEvent, resp.retry_after_ms, resp.scope);
     if (resp && resp.code === 'offline') return fail('Koode backend is not reachable. Is it running?', 'Koode സെർവറുമായി ബന്ധപ്പെടാനായില്ല.');
     if (!resp || resp.error) return fail('Planner unavailable: ' + (resp && resp.error || 'no response'));
     S.rateRetries = 0;
@@ -87,7 +87,14 @@
   }
 
   // Model rate limit outlasted the backend's back-off: count down visibly and retry the same step.
-  function rateLimited(my, lastEvent, retryAfterMs) {
+  function rateLimited(my, lastEvent, retryAfterMs, scope) {
+    // A daily quota (or any wait over 30 s) won't clear during a countdown: say so instead of retrying.
+    if (scope === 'day' || retryAfterMs > 30000) {
+      S.rateRetries = 0;
+      const min = Math.max(1, Math.round((retryAfterMs || 60000) / 60000));
+      return fail(`The AI service's free daily quota is used up. Try again in about ${min} min (press Repeat).`,
+        `AI സേവനത്തിന്റെ ഇന്നത്തെ സൗജന്യ പരിധി കഴിഞ്ഞു. ഏകദേശം ${min} മിനിറ്റ് കഴിഞ്ഞ് "Repeat" അമർത്തൂ.`);
+    }
     if (S.rateRetries >= RATE_RETRIES) {
       S.rateRetries = 0;
       return fail('The AI service is still busy (free-tier rate limit). Press Repeat to try again.', 'AI സേവനം ഇപ്പോഴും തിരക്കിലാണ്. "Repeat" അമർത്തി വീണ്ടും ശ്രമിക്കൂ.');

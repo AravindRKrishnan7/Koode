@@ -38,7 +38,9 @@ SARVAM_API_KEY=... also enables voice: Saaras v4 speech-to-text and Bulbul v3 Ma
 1. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → `extension/`.
 2. Open `http://localhost:8787/demo/` and pick a page.
 3. Click the Koode bubble (bottom-right), type a goal, e.g. `ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ` or `Change this website to dark mode`.
-   Or hold 🎤 and speak (Malayalam by default); the transcript goes to the same planner and Koode reads each step aloud. Typed goals get text-only replies.
+   Or hold 🎤 (mouse, or Space/Enter when focused) and speak (Malayalam by default). Koode shows and reads back what it heard and waits for ✓ (edit the text to correct it); then the transcript goes to the same planner and Koode reads each step aloud. Typed goals get text-only replies.
+
+Demo and real-microphone test procedure: [`docs/DEMO.md`](docs/DEMO.md).
 
 The content script auto-loads on `localhost`/`127.0.0.1`. On other sites, click the Koode toolbar button to opt in for that tab (`activeTab`).
 
