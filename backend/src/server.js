@@ -35,12 +35,17 @@ function readBody(req, limit = 512 * 1024) {
 // Audit log of exactly what was sent to the model (sanitised request) + result.
 function audit(entry) {
   if (!cfg.logPayloads) return;
-  fs.mkdirSync(LOG_DIR, { recursive: true });
-  fs.appendFileSync(path.join(LOG_DIR, 'plan-requests.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(path.join(LOG_DIR, 'plan-requests.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
+  } catch (e) {
+    console.error('[audit] write failed', e.message);
+  }
 }
 
 function serveStatic(req, res, urlPath) {
-  const rel = decodeURIComponent(urlPath.replace(/^\/demo\/?/, '')) || 'index.html';
+  let rel;
+  try { rel = decodeURIComponent(urlPath.replace(/^\/demo\/?/, '')) || 'index.html'; } catch (_) { return send(res, 400, 'bad path'); }
   const file = path.resolve(DEMO_DIR, rel);
   if (!file.startsWith(DEMO_DIR)) return send(res, 403, 'forbidden');
   fs.readFile(file, (err, data) => {
@@ -77,6 +82,7 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, 'not found');
 });
 
-server.listen(cfg.port, () => {
-  console.log(`Koode backend on http://localhost:${cfg.port}  provider=${cfg.provider} model=${cfg.model}${cfg.provider === 'mock' ? '  (MOCK TEST HARNESS — not AI)' : ''}`);
+// Loopback only by default: the planner spends the operator's model quota.
+server.listen(cfg.port, cfg.host, () => {
+  console.log(`Koode backend on http://${cfg.host}:${cfg.port}  provider=${cfg.provider} model=${cfg.model}${cfg.provider === 'mock' ? '  (MOCK TEST HARNESS — not AI)' : ''}`);
 });

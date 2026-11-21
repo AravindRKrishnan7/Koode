@@ -22,6 +22,7 @@ export function loadConfig() {
   const provider = detectProvider();
   return {
     port: Number(env.PORT || 8787),
+    host: env.HOST || '127.0.0.1',
     provider,
     model: env.KOODE_MODEL || DEFAULT_MODELS[provider] || 'unknown',
     timeoutMs: Number(env.KOODE_LLM_TIMEOUT_MS || 20000),
