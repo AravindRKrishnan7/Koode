@@ -16,6 +16,34 @@ curl -s localhost:8787/health   # expect "provider":"groq","mock":false,"voice":
 4. First press of 🎤: Chrome asks for microphone permission for `localhost:8787` → **Allow**.
 5. Keys stay in the backend shell only. Never paste them into the extension, the page, or a commit.
 
+## Mic rehearsal without spending Groq quota
+
+Rehearse the voice path as often as you like with the mock planner. Only Sarvam is called; the panel says **MOCK test harness (not AI)**, so never use this mode in front of judges.
+
+```bash
+cd backend
+SARVAM_API_KEY=... KOODE_PROVIDER=mock npm start      # no GROQ_API_KEY needed
+```
+
+Steps 1–3 and 7–10 below behave exactly as with Groq (recording, transcript, confirm/correct, spoken read-back, fallbacks). Arrow targets come from the mock, so judge only the voice part this way.
+
+## Groq quota budget (free tier)
+
+| Limit | Value | Koode usage |
+|---|---|---|
+| Tokens per minute | 8,000 | One step ≈ 850 tokens, so ≈ 9 steps/min |
+| Tokens per day (per Groq organization, shared by all its keys) | ≈ 200,000 (Groq’s published free-tier cap) | One voice demo (3 steps + done) ≈ 3,500 tokens; the full E2E suite ×3 ≈ 70,000 |
+| Requests per day | 1,000 | ≈ 4 per demo |
+
+On judging day: no E2E runs, no repeated rehearsals on Groq. Rehearse in mock mode, then switch back to Groq (`KOODE_REQUIRE_LLM=1`) and do at most one real run before judging.
+
+## Known-good versions
+
+- `koode-groq-verified`: last commit fully verified on real Groq + Sarvam in Chrome.
+- `koode-judging-candidate`: feature-frozen judging build.
+
+`git checkout koode-judging-candidate`, reload the extension card in `chrome://extensions`, restart the backend.
+
 ## Real-microphone manual test (~5 min)
 
 Reload the page (`F5`) before each case; it resets the demo state.
@@ -47,7 +75,7 @@ Record what Koode heard for 3–5 different phrasings (e.g. *"ഡാർക്ക
 
 ## 90-second judging script
 
-Pre-flight (before the judges arrive): backend running, `/health` shows `groq`, `mock:false`, `voice:true`; mic permission already allowed; tab on `settings.html?layout=b`, reloaded; **wait 60 s since the last run** so the Groq per-minute budget is full. Keep a second tab on `form.html` as a backup.
+Pre-flight (before the judges arrive): backend running with `KOODE_REQUIRE_LLM=1`, `/health` shows `groq`, `mock:false`, `voice:true`; panel badge reads `model: openai/gpt-oss-20b` (not MOCK); mic permission already allowed; tab on `settings.html?layout=b`, reloaded; **wait 60 s since the last run** so the Groq per-minute budget is full. Keep a second tab on `form.html` as a backup.
 
 | Time | Say (presenter) | Do |
 |---|---|---|

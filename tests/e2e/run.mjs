@@ -82,6 +82,12 @@ async function voiceFixture() {
   const rate = wav.readUInt32LE(24), pcm = wav.subarray(dataAt);
   const pad = (s) => Buffer.alloc(Math.round(rate * s) * 2);
   const data = Buffer.concat([pad(0.6), pcm, pad(1.2)]);
+  // KOODE_VOICE_NOISE=0.05 adds white noise (fraction of full scale) to approximate a real room microphone.
+  const noise = Number(process.env.KOODE_VOICE_NOISE || 0);
+  for (let i = 0; noise && i + 1 < data.length; i += 2) {
+    const v = data.readInt16LE(i) + Math.round((Math.random() * 2 - 1) * noise * 32767);
+    data.writeInt16LE(Math.max(-32768, Math.min(32767, v)), i);
+  }
   const head = Buffer.from(wav.subarray(0, 44));
   head.write('data', 36); head.writeUInt32LE(data.length, 40); head.writeUInt32LE(36 + data.length, 4);
   fs.writeFileSync(file, Buffer.concat([head, data]));
@@ -362,7 +368,7 @@ async function main() {
   const num = (xs) => xs.map(Number).filter((x) => x > 0);
   const stat = (xs) => xs.length ? { mean: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), max: Math.max(...xs) } : null;
   if (fixture || vr.length) results.voice = {
-    fixture: fixture && { seconds: fixture.seconds, note: 'Sarvam Bulbul TTS voice, not a human recording' },
+    fixture: fixture && { seconds: fixture.seconds, noise: Number(process.env.KOODE_VOICE_NOISE || 0), note: 'Sarvam Bulbul TTS voice, not a human recording' },
     runs: vr.length, completed: vr.filter((r) => r.done && r.reachedEnd).length, transcriptsExact: vr.filter((r) => r.transcriptExact).length,
     sttRoundTripMs: stat(num(vr.map((r) => r.voice && r.voice.sttMs))), sttSarvamMs: stat(num(vr.map((r) => r.voice && r.voice.sttBackendMs))),
     releaseToConfirmMs: stat(num(vr.map((r) => r.releaseToConfirmMs))), confirmToArrowMs: stat(num(vr.map((r) => r.confirmToArrowMs))),
