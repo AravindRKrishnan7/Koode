@@ -110,7 +110,7 @@
     // While a transcript is awaiting confirmation, Enter/Guide confirms the (possibly edited) text as a voice goal.
     els.form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
     els.yes.addEventListener('click', () => submit());
-    els.again.addEventListener('click', () => { hideConfirm(); if (handlers.onRetryVoice) handlers.onRetryVoice(); });
+    els.again.addEventListener('click', () => { hideConfirm(); els.input.value = ''; if (handlers.onRetryVoice) handlers.onRetryVoice(); });
     // Push-to-talk: record while the mic button (or Space/Enter on it) is held down.
     els.mic.addEventListener('pointerdown', (e) => {
       e.preventDefault();
