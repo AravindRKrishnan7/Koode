@@ -191,7 +191,8 @@
     if (!S.target || !S.lastPlan) return;
     const v = extractor.resolve(S.target.id);
     if (!v.ok) return plan({ type: 'target_lost', label: S.target.info.label });
-    overlay.point(v.anchor, { text: S.lastPlan.instruction_ml || S.lastPlan.instruction_en });
+    const r = S.target;
+    overlay.point(v.anchor, { text: S.lastPlan.instruction_ml || S.lastPlan.instruction_en, lost: () => onLost(r), rect: (rect) => panel.avoid(rect) });
     panel.setInstruction({ ml: S.lastPlan.instruction_ml, en: S.lastPlan.instruction_en, explain: S.lastPlan.explanation_ml });
   }
 
