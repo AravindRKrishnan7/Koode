@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { planStep } from './planner.js';
 import { transcribe, speak } from './providers/sarvam-speech.js';
+import { mockTranscribe, mockSpeak, queueTranscripts } from './providers/mock-speech.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_DIR = path.resolve(here, '../../demo-site');
@@ -62,7 +63,13 @@ const server = http.createServer(async (req, res) => {
   // non-browser client, which sends no Origin) may call them; web pages get 403.
   const origin = req.headers.origin;
   if (url.pathname.startsWith('/api/') && origin && !origin.startsWith('chrome-extension://')) return send(res, 403, { error: 'forbidden origin' });
-  if (url.pathname === '/health') return send(res, 200, { ok: true, provider: cfg.provider, model: cfg.model, mock: cfg.provider === 'mock', voice: !!cfg.keys.sarvam });
+  if (url.pathname === '/health') return send(res, 200, { ok: true, provider: cfg.provider, model: cfg.model, mock: cfg.provider === 'mock', voice: !!cfg.speech, speech: cfg.speech });
+  // Test-only (mock speech, local non-browser client): queue the transcripts the mock STT returns next.
+  if (url.pathname === '/test/stt-queue' && req.method === 'POST') {
+    if (cfg.speech !== 'mock' || origin) return send(res, 403, { error: 'mock speech only' });
+    try { return send(res, 200, { queued: queueTranscripts(JSON.parse(await readBody(req, 16 * 1024)).transcripts) }); }
+    catch (e) { return send(res, 400, { error: e.message }); }
+  }
   if (url.pathname === '/' ) return send(res, 302, '', { Location: '/demo/' });
   if (url.pathname.startsWith('/demo')) return serveStatic(req, res, url.pathname);
   if (url.pathname === '/api/plan' && req.method === 'POST') {
@@ -89,7 +96,7 @@ const server = http.createServer(async (req, res) => {
     const stt = url.pathname === '/api/stt';
     try {
       const body = JSON.parse(await readBody(req, stt ? 4 * 1024 * 1024 : 16 * 1024));
-      const out = stt ? await transcribe(cfg, body) : await speak(cfg, body);
+      const out = cfg.speech === 'mock' ? await (stt ? mockTranscribe : mockSpeak)(cfg, body) : stt ? await transcribe(cfg, body) : await speak(cfg, body);
       // Lengths only: transcripts and spoken text stay out of the console log.
       console.log(stt ? `[stt] ${out.model} ${out.latency_ms}ms lang=${out.language_code} transcript_chars=${out.transcript.length}`
         : `[tts] ${out.model} ${out.latency_ms}ms text_chars=${String(body.text || '').length}`);
@@ -104,5 +111,5 @@ const server = http.createServer(async (req, res) => {
 
 // Loopback only by default: the planner spends the operator's model quota.
 server.listen(cfg.port, cfg.host, () => {
-  console.log(`Koode backend on http://${cfg.host}:${cfg.port}  provider=${cfg.provider} model=${cfg.model}${cfg.provider === 'mock' ? '  (MOCK TEST HARNESS — not AI)' : ''}`);
+  console.log(`Koode backend on http://${cfg.host}:${cfg.port}  provider=${cfg.provider} model=${cfg.model}${cfg.provider === 'mock' ? '  (MOCK TEST HARNESS — not AI)' : ''}  speech=${cfg.speech || 'off'}${cfg.speech === 'mock' ? ' (MOCK SPEECH — not Sarvam)' : ''}`);
 });

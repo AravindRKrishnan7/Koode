@@ -34,7 +34,7 @@ function compactCandidate({ id, role, type, label, section, state, sensitive, in
   if (sensitive) c.sensitive = true;
   if (options && options.length) c.options = options;
   if (in_viewport === false) c.off = true;
-  if (bbox) c.pos = [bbox.x, bbox.y];
+  else if (bbox) c.pos = [bbox.x, bbox.y]; // position helps only for on-screen controls
   return c;
 }
 
