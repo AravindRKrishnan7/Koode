@@ -78,13 +78,15 @@
     panel.setInstruction({ ml: (resp.instruction_ml || '') + sensitiveNote, en: resp.instruction_en, explain: resp.explanation_ml });
     overlay.point(r.anchor, {
       text: resp.instruction_ml || resp.instruction_en,
-      lost: () => { if (S.target === r) { record({ target_label: r.info.label, outcome: 'target_lost' }); plan({ type: 'target_lost', label: r.info.label }); } }
+      lost: () => onLost(r),
+      rect: (rect) => panel.avoid(rect)
     });
     panel.avoid(r.anchor.getBoundingClientRect());
     const kind = monitor.watch(r, {
       verified: (ev) => onVerified(r, kind, ev),
       wrong: (info) => onWrong(r, info),
       noChange: () => {
+        if (!extractor.resolve(r.id).ok) return onLost(r);
         panel.setState('waiting');
         panel.log('click on target but no page change observed');
         panel.setInstruction({ ml: 'ക്ലിക്ക് കണ്ടു, പക്ഷേ മാറ്റമൊന്നും കണ്ടില്ല. ഒന്നുകൂടി ശ്രമിക്കൂ.', en: 'I saw the click but nothing changed yet. Please try once more.' });
@@ -96,6 +98,13 @@
     });
     panel.log(`pointing at ${r.id} "${r.info.label}" (${r.info.role}, expect ${kind})`);
     persist();
+  }
+
+  // Target disappeared. If the user's click on it is still being verified, let the monitor decide.
+  function onLost(r) {
+    if (S.target !== r || monitor.isVerifying()) return;
+    record({ target_label: r.info.label, outcome: 'target_lost' });
+    plan({ type: 'target_lost', label: r.info.label });
   }
 
   function onVerified(r, kind, ev) {
@@ -129,7 +138,7 @@
       ml: `അത് "${info.label}" ആണ്. ശരിയായത് "${r.info.label}" — അമ്പടയാളം കാണിക്കുന്നിടത്ത്.`,
       en: `That was "${info.label}". The right one is "${r.info.label}" — where the arrow points.`
     });
-    overlay.point(r.anchor, { text: `"${r.info.label}"`, lost: () => plan({ type: 'target_lost', label: r.info.label }) });
+    overlay.point(r.anchor, { text: `"${r.info.label}"`, lost: () => onLost(r), rect: (rect) => panel.avoid(rect) });
   }
 
   function fail(msg) {

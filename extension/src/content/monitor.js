@@ -164,5 +164,8 @@
     return kind;
   }
 
-  K.monitor = { watch, stop, actionKind, waitForChange };
+  // True while a target click/change is being verified (the target may vanish meanwhile, e.g. on submit).
+  const isVerifying = () => !!(active && (active.busy || active.verifying));
+
+  K.monitor = { watch, stop, actionKind, waitForChange, isVerifying };
 })();

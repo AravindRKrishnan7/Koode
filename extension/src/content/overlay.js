@@ -6,7 +6,7 @@
   if (K.started) return; // already injected on this page
 
   let host, root, ring, arrow, bubble, edge;
-  let anchor = null, raf = 0, onLost = null, lostFrames = 0;
+  let anchor = null, raf = 0, onLost = null, onRect = null, lostFrames = 0, frameNo = 0;
 
   const CSS = `
     :host { all: initial; }
@@ -62,6 +62,7 @@
     }
     lostFrames = 0;
     const r = anchor.getBoundingClientRect();
+    if (onRect && ++frameNo % 15 === 0) onRect(r);
     const pad = 5;
     const above = r.bottom < 0, below = r.top > innerHeight;
     host.dataset.koodeVisibility = above ? 'above' : below ? 'below' : 'in';
@@ -105,10 +106,11 @@
     }
   }
 
-  function point(targetAnchor, { text = '', lost } = {}) {
+  function point(targetAnchor, { text = '', lost, rect } = {}) {
     ensure();
     anchor = targetAnchor;
     onLost = lost || null;
+    onRect = rect || null;
     lostFrames = 0;
     bubble.textContent = text;
     host.dataset.koodeActive = 'true';
@@ -122,6 +124,7 @@
   function clear() {
     anchor = null;
     onLost = null;
+    onRect = null;
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     if (!host) return;

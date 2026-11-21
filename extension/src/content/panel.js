@@ -16,6 +16,7 @@
     * { box-sizing: border-box; }
     .wrap { position: fixed; right: 20px; bottom: 20px; z-index: 2147483647; font-family: "Noto Sans Malayalam","Noto Sans",system-ui,-apple-system,sans-serif; color: #1f2340; }
     .wrap.left { right: auto; left: 20px; }
+    .wrap.top { bottom: auto; top: 20px; }
     .launcher { width: 58px; height: 58px; border-radius: 50%; border: none; cursor: pointer; color: #fff; font: 700 20px inherit;
       background: radial-gradient(circle at 30% 30%, #ffa45c, #ff6a00); box-shadow: 0 8px 22px rgba(255,106,0,.45); }
     .card { width: 340px; background: #fffdf9; border-radius: 18px; box-shadow: 0 16px 40px rgba(31,35,64,.28); overflow: hidden; border: 1px solid #f1e3d3; }
@@ -120,9 +121,17 @@
   // Move the panel to the other side if it would cover the target.
   function avoid(rect) {
     if (!rect) return;
-    const card = els.wrap.getBoundingClientRect();
-    const overlaps = !(rect.right < card.left || rect.left > card.right || rect.bottom < card.top || rect.top > card.bottom);
-    if (overlaps) els.wrap.classList.toggle('left');
+    const hits = () => { const c = els.wrap.getBoundingClientRect(); return !(rect.right < c.left || rect.left > c.right || rect.bottom < c.top || rect.top > c.bottom); };
+    if (!hits()) return;
+    // Try the four corners; stay put if every corner overlaps (very large targets).
+    const before = [els.wrap.classList.contains('left'), els.wrap.classList.contains('top')];
+    for (const [left, top] of [[false, false], [true, false], [false, true], [true, true]]) {
+      els.wrap.classList.toggle('left', left);
+      els.wrap.classList.toggle('top', top);
+      if (!hits()) return;
+    }
+    els.wrap.classList.toggle('left', before[0]);
+    els.wrap.classList.toggle('top', before[1]);
   }
 
   K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid };
