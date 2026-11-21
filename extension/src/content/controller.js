@@ -239,6 +239,14 @@
   // A failed or abandoned voice attempt during guidance keeps the current step on screen.
   function guiding() {
     if (!S.active || !S.target || !S.lastPlan) return false;
+    if (S.paused) {
+      // Resume watching the step that was paused when the mic was pressed.
+      S.paused = false;
+      const v = extractor.resolve(S.target.id);
+      if (!v.ok) plan({ type: 'target_lost', label: S.target.info.label });
+      else show(S.lastPlan, v);
+      return true;
+    }
     panel.setState('waiting');
     panel.setInstruction({ ml: S.lastPlan.instruction_ml, en: S.lastPlan.instruction_en, explain: S.lastPlan.explanation_ml });
     return true;
@@ -255,6 +263,8 @@
   async function micDown() {
     voice.hush();
     S.voiceToken = (S.voiceToken || 0) + 1; // the current task continues until a new goal is confirmed
+    // Pause step verification while the user speaks/confirms (e.g. focus moving to ✓ must not complete a field step).
+    if (S.active && S.target && !S.paused) { monitor.stop(); S.paused = true; }
     try {
       await voice.start();
     } catch (e) {
@@ -341,6 +351,7 @@
 
   function stop(silent) {
     S.token += 1;
+    S.paused = false;
     S.voiceToken = (S.voiceToken || 0) + 1;
     voice.hush();
     S.active = false;
