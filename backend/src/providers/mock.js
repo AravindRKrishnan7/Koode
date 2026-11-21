@@ -20,6 +20,16 @@ export function mockPlan(req) {
   const goal = req.goal.toLowerCase();
   if (isDone(req)) return { status: 'done', instruction_en: 'Done (mock).', instruction_ml: 'കഴിഞ്ഞു (mock).' };
   const wantsDark = /dark|night|theme|ഇരുണ്ട|ഡാർക്ക്/.test(goal);
+  const search = goal.match(/(?:search|find|look)(?: for)?\s+(?:an? |the )?(.+)|(.+?)\s*(?:തിരയ|കണ്ടെത്ത)/);
+  if (search && !wantsDark) {
+    if (/^\/watch/.test(req.snapshot.path || '')) return { status: 'done', instruction_en: 'Video opened (mock).', instruction_ml: 'വീഡിയോ തുറന്നു (mock).' };
+    const words = (search[1] || search[2] || '').replace(/\b(video|tutorial|on|about|how to)\b/g, ' ').split(/\s+/).filter((w) => w.length > 2);
+    const box = candidates.find((c) => /searchbox|combobox|textbox/.test(c.role) && /search|തിരയ/i.test(c.label + ' ' + (c.placeholder || '')));
+    const result = candidates.find((c) => c.role === 'link' && words.length && words.every((w) => (c.label || '').toLowerCase().includes(w)));
+    const btn = candidates.find((c) => c.role === 'button' && /^search$|^തിരയ/i.test(c.label || ''));
+    const pickS = result || (box && !box.state.filled ? box : btn || box);
+    if (pickS) return { status: 'guide', target_id: pickS.id, instruction_en: `[mock] Use "${pickS.label}".`, instruction_ml: `[mock] "${pickS.label}" ഉപയോഗിക്കൂ.`, expected_observation: 'state change', confidence: 0.5 };
+  }
   let pick = null;
   if (wantsDark) {
     const words = SYNONYMS.dark;

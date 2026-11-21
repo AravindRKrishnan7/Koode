@@ -11,6 +11,12 @@
   const SLOW_NOTICE_MS = 2500;
 
   const send = (msg) => chrome.runtime.sendMessage(msg);
+  // Mirror state to the side panel (instructions and step only; no page content beyond labels).
+  const mirror = { state: 'idle' };
+  const setState0 = panel.setState, setInstruction0 = panel.setInstruction;
+  const progress = () => send({ type: 'koode:progress', progress: { ...mirror, goal: S.active ? S.goal : '', step: S.step, active: S.active, site: K.sites && K.sites.forUrl(location.href)?.name } }).catch(() => {});
+  panel.setState = (st) => { setState0(st); mirror.state = st; progress(); };
+  panel.setInstruction = (i = {}) => { setInstruction0(i); mirror.ml = i.ml || ''; mirror.en = i.en || ''; progress(); };
 
   function persist(extra = {}) {
     const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, ...extra } : null;
@@ -340,6 +346,7 @@
     panel.setGoal(task.goal);
     panel.log('resumed after page load');
     const p = task.pending;
+    if (task.fresh) { task.fresh = false; persist(); panel.log('goal carried over from the companion panel'); }
     if (p && p.type === 'navigation') {
       if (location.href !== p.from) {
         if (p.on_target) record({ target_label: p.target_label, outcome: 'verified', action: 'click', evidence: 'navigation' });
