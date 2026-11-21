@@ -38,3 +38,16 @@ The backend rebuilds the request from an allowlist (`backend/src/safety.js`) so 
 ```
 
 The verifiable action (click / fill / check / select) is derived from the element itself in `monitor.js`, not from the model.
+
+## POST /api/stt and /api/tts (extension → backend → Sarvam)
+
+Voice is optional (`/health` reports `"voice": true` when `SARVAM_API_KEY` is set). The key never leaves the backend.
+
+```jsonc
+// /api/stt  request: push-to-talk clip (≤ 25 s), base64     response:
+{ "audio": "<base64>", "mime": "audio/webm" }               { "transcript": "…", "language_code": "ml-IN", "model": "saaras:v4", "latency_ms": 1200 }
+// /api/tts  request: text ≤ 500 chars                       response: base64 WAV
+{ "text": "…", "lang": "ml-IN" }                            { "audio": "<base64>", "mime": "audio/wav", "model": "bulbul:v3", "latency_ms": 900 }
+```
+
+The transcript is used as the goal for `/api/plan`, exactly like typed text. Spoken replies play only for voice-started tasks.

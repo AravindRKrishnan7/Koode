@@ -40,6 +40,12 @@ export function loadConfig() {
     },
     openaiBaseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     groqBaseUrl: env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-    reasoningEffort: env.KOODE_REASONING_EFFORT || 'low'
+    reasoningEffort: env.KOODE_REASONING_EFFORT || 'low',
+  // Voice (Sarvam): Saaras v4 speech-to-text, Bulbul text-to-speech.
+  sttModel: env.KOODE_STT_MODEL || 'saaras:v4',
+  sttLanguage: env.KOODE_STT_LANGUAGE || 'ml-IN',
+  ttsModel: env.KOODE_TTS_MODEL || 'bulbul:v3',
+  ttsSpeaker: env.KOODE_TTS_SPEAKER || '',
+  speechTimeoutMs: Number(env.KOODE_SPEECH_TIMEOUT_MS || 20000)
   };
 }

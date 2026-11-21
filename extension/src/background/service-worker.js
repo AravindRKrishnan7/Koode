@@ -1,9 +1,9 @@
-// Background service worker: proxies planner requests to the Koode backend
+// Background service worker: proxies planner and voice requests to the Koode backend
 // (keeps API keys off the page/extension) and stores per-tab task state.
 const DEFAULT_BACKEND = 'http://localhost:8787';
 const CONTENT_FILES = [
   'src/shared/constants.js', 'src/content/extractor.js', 'src/content/overlay.js', 'src/content/monitor.js',
-  'src/content/panel.js', 'src/content/controller.js', 'src/content/main.js'
+  'src/content/voice.js', 'src/content/panel.js', 'src/content/controller.js', 'src/content/main.js'
 ];
 
 async function backendUrl() {
@@ -11,8 +11,8 @@ async function backendUrl() {
   return backendUrl || DEFAULT_BACKEND;
 }
 
-async function plan(payload) {
-  const res = await fetch((await backendUrl()) + '/api/plan', {
+async function api(route, payload) {
+  const res = await fetch((await backendUrl()) + route, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   });
   const body = await res.json().catch(() => ({ error: 'bad JSON from backend' }));
@@ -25,7 +25,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const key = 'task:' + tabId;
   (async () => {
     switch (msg && msg.type) {
-      case 'koode:plan': return plan(msg.payload);
+      case 'koode:plan': return api('/api/plan', msg.payload);
+      case 'koode:stt': return api('/api/stt', msg.payload);
+      case 'koode:tts': return api('/api/tts', msg.payload);
       case 'koode:saveTask': await chrome.storage.session.set({ [key]: msg.task }); return true;
       case 'koode:clearTask': await chrome.storage.session.remove(key); return true;
       case 'koode:loadTask': return (await chrome.storage.session.get(key))[key] || null;

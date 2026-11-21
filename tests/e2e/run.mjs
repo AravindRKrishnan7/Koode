@@ -3,7 +3,8 @@
 // (isTrusted=true): mouse clicks and keyboard typing — no element.value= or
 // programmatic dispatchEvent.
 //
-// Usage: node e2e/run.mjs [--headed] [--only form|settings-a|settings-b|stale] [--repeat N]
+// Usage: node e2e/run.mjs [--headed] [--only form|settings-a|settings-b|voice|stale] [--repeat N]
+// Voice runs feed a Malayalam WAV (synthesised once via the backend's Sarvam TTS) into Chrome's fake microphone.
 // Requires the backend running (npm start in backend/) on KOODE_BACKEND (default http://localhost:8787).
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -63,6 +64,42 @@ async function startGoal(page, goal) {
   await waitFor(page, (p) => p.koodeOpen === 'true', 'panel open', 5000);
   await page.keyboard.type(goal);
   await page.keyboard.press('Enter');
+}
+
+// Spoken Malayalam goal for the voice scenario, played through Chrome's fake microphone.
+const VOICE_GOAL = 'ഈ വെബ്സൈറ്റ് ഡാർക്ക് മോഡിലേക്ക് മാറ്റണം';
+const VOICE_HOLD_MS = 3800;
+
+// Build the fake-mic WAV: TTS audio with 0.6 s of silence before and 1.2 s after (PCM16 mono).
+async function voiceFixture() {
+  const file = path.join(ARTIFACTS, 'voice-goal-ml.wav');
+  const r = await fetch(BACKEND + '/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: VOICE_GOAL, lang: 'ml-IN' }) });
+  const body = await r.json();
+  if (!r.ok) throw new Error('voice fixture: ' + body.error);
+  const wav = Buffer.from(body.audio, 'base64');
+  const dataAt = wav.indexOf('data') + 8;
+  const rate = wav.readUInt32LE(24), pcm = wav.subarray(dataAt);
+  const pad = (s) => Buffer.alloc(Math.round(rate * s) * 2);
+  const data = Buffer.concat([pad(0.6), pcm, pad(1.2)]);
+  const head = Buffer.from(wav.subarray(0, 44));
+  head.write('data', 36); head.writeUInt32LE(data.length, 40); head.writeUInt32LE(36 + data.length, 4);
+  fs.writeFileSync(file, Buffer.concat([head, data]));
+  return { file, ttsMs: body.latency_ms, seconds: +(pcm.length / 2 / rate).toFixed(2) };
+}
+
+// Push-to-talk with a real mouse press held on the mic button. Returns the release time.
+async function startVoice(page, holdMs) {
+  await page.waitForSelector('#koode-panel-root', { state: 'attached', timeout: 10000 });
+  const vp = page.viewportSize();
+  await page.mouse.click(vp.width - 49, vp.height - 49);
+  const p = await waitFor(page, (q) => q.koodeOpen === 'true' && q.koodeMicRect, 'panel open', 5000);
+  const [x, y, w, h] = p.koodeMicRect.split(',').map(Number);
+  await page.mouse.move(x + w / 2, y + h / 2);
+  await page.mouse.down();
+  await waitFor(page, (q) => q.koodeState === 'listening' || q.koodeVoiceError, 'listening', 5000);
+  await sleep(holdMs);
+  await page.mouse.up();
+  return Date.now();
 }
 
 // The element under the centre of the highlighted rect, i.e. what the arrow points at.
@@ -133,16 +170,18 @@ async function shot(page, file) {
 function readLog() { return fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8') : ''; }
 
 // expectPath: ordered target labels for the canonical route; null = judge by form validity.
-async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
-  const res = { name, goal, steps: [], wrongClick: null, anchorChecks: [], done: false, planner: null };
+async function guidedRun(page, name, { goal, voice = false, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
+  const res = { name, goal, input: voice ? 'voice' : 'text', steps: [], wrongClick: null, anchorChecks: [], done: false, planner: null };
   let pathIdx = 0;
-  await startGoal(page, goal);
+  const released = voice ? await startVoice(page, VOICE_HOLD_MS) : null;
+  if (!voice) await startGoal(page, goal);
   let lastStep = 0;
   for (let i = 0; i < maxSteps; i++) {
     const p = await waitFor(page, (p) => (p.koodeState === 'waiting' && Number(p.koodeStep) > lastStep && p.overlay && p.overlay.koodeTip) || p.koodeState === 'done' || p.koodeState === 'error' || (p.koodeState === 'idle' && Number(p.koodeStep || 0) >= 0 && p.koodeEvents > 3), 'next step');
     res.planner = p.koodePlanner;
     if (p.koodeState === 'done') { res.done = true; res.finalInstruction = p.koodeInstruction; break; }
     if (p.koodeState !== 'waiting') { res.error = `${p.koodeState}: ${p.koodeInstruction} | ${p.koodeLastEvent}`; break; }
+    if (released && !res.voiceToArrowMs) res.voiceToArrowMs = Date.now() - released;
     lastStep = Number(p.koodeStep);
     await sleep(400); // let smooth scroll settle before measuring
     const el = await pointedElement(page);
@@ -179,8 +218,10 @@ async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null,
     await perform(page, el2);
     res.steps.push(step);
   }
+  if (voice) await waitFor(page, (q) => Number(q.koodeVoiceTtsCount || 0) > lastStep || q.koodeVoiceError, 'spoken replies', 15000).catch(() => {});
   const fin = await panel(page);
   res.finalState = fin.koodeState;
+  if (voice) res.voice = Object.fromEntries(Object.entries(fin).filter(([k]) => k.startsWith('koodeVoice')).map(([k, v]) => [k.slice(10, 11).toLowerCase() + k.slice(11), v]));
   if (expectPath) res.reachedEnd = pathIdx === expectPath.length;
   await shot(page, `${name}-final.png`);
   return res;
@@ -190,11 +231,14 @@ async function main() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const health = await fetch(BACKEND + '/health').then((r) => r.json());
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koode-e2e-'));
+  const wantVoice = (!only || only === 'voice') && health.voice;
+  const fixture = wantVoice ? await voiceFixture() : null;
+  const micArgs = fixture ? ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${fixture.file}`] : [];
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromePath(),
     headless: !headed,
     viewport: { width: 1280, height: 800 },
-    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check']
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check', ...micArgs]
   });
   const version = ctx.browser() ? ctx.browser().version() : (await (await ctx.newCDPSession(await ctx.newPage())).send('Browser.getVersion')).product;
   const logStart = readLog().length;
@@ -207,6 +251,7 @@ async function main() {
     if (!only || only === 'form') scenarios.push(['form', r]);
     if (!only || only === 'settings-a') scenarios.push(['settings-a', r]);
     if (!only || only === 'settings-b') scenarios.push(['settings-b', r]);
+    if (wantVoice) scenarios.push(['voice', r]);
   }
 
   for (const [kind, r] of scenarios) {
@@ -225,6 +270,16 @@ async function main() {
       } else if (kind === 'settings-b') {
         await page.goto(BACKEND + '/demo/settings.html?layout=b');
         results.runs.push(await guidedRun(page, name, { goal: 'ഈ വെബ്സൈറ്റ് ഡാർക്ക് മോഡിലേക്ക് മാറ്റണം', maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] }));
+      } else if (kind === 'voice') {
+        await page.goto(BACKEND + '/demo/settings.html?layout=b');
+        const at = readLog().length;
+        const run = await guidedRun(page, name, { goal: VOICE_GOAL, voice: true, maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] });
+        // The transcript only exists server-side; read it back from the first planner request of this run.
+        const first = readLog().slice(at).split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.request);
+        run.transcript = first ? first.request.goal : null;
+        const norm = (s) => (s || '').replace(/[\s.,!?।]+/g, '');
+        run.transcriptExact = norm(run.transcript) === norm(VOICE_GOAL);
+        results.runs.push(run);
       } else if (kind === 'stale') {
         // Only meaningful when backend runs with KOODE_FAULT=stale_first.
         await page.goto(BACKEND + '/demo/settings.html');
@@ -261,6 +316,17 @@ async function main() {
     cannotFind: entries.filter((e) => e.result.status === 'cannot_find').length,
     rateLimited: { requests: waits.length, totalWaitMs: waits.reduce((x, y) => x + y, 0) },
     latencyMs: { mean: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : null, p50: pct(0.5), p95: pct(0.95), max: lat[lat.length - 1] ?? null }
+  };
+  const vr = results.runs.filter((r) => r.input === 'voice');
+  const num = (xs) => xs.map(Number).filter((x) => x > 0);
+  const stat = (xs) => xs.length ? { mean: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), max: Math.max(...xs) } : null;
+  if (fixture || vr.length) results.voice = {
+    fixture: fixture && { seconds: fixture.seconds, note: 'Sarvam Bulbul TTS voice, not a human recording' },
+    runs: vr.length, completed: vr.filter((r) => r.done && r.reachedEnd).length, transcriptsExact: vr.filter((r) => r.transcriptExact).length,
+    sttRoundTripMs: stat(num(vr.map((r) => r.voice && r.voice.sttMs))), sttSarvamMs: stat(num(vr.map((r) => r.voice && r.voice.sttBackendMs))),
+    releaseToArrowMs: stat(num(vr.map((r) => r.voiceToArrowMs))),
+    ttsRequestToPlayingMs: stat(num(vr.map((r) => r.voice && r.voice.ttsMs))), ttsSarvamMs: stat(num(vr.map((r) => r.voice && r.voice.ttsBackendMs))),
+    spokenReplies: vr.map((r) => Number(r.voice && r.voice.ttsCount || 0)), errors: vr.map((r) => r.voice && r.voice.error).filter(Boolean)
   };
   results.finishedAt = new Date().toISOString();
   fs.writeFileSync(path.join(ARTIFACTS, 'report.json'), JSON.stringify(results, null, 2));

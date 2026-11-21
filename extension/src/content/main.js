@@ -3,7 +3,8 @@
   const K = globalThis.Koode;
   if (!K || K.started) return;
   K.started = true;
-  K.panel.init({ onGoal: (g) => K.controller.start(g), onStop: () => K.controller.stop(), onRepeat: () => K.controller.repeat() });
+  K.panel.init({ onGoal: (g) => K.controller.start(g), onStop: () => K.controller.stop(), onRepeat: () => K.controller.repeat(),
+    onMicDown: () => K.controller.micDown(), onMicUp: () => K.controller.micUp() });
 
   chrome.runtime.onMessage.addListener((msg) => { if (msg && msg.type === 'koode:open') K.panel.open(); });
 

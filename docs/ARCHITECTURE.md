@@ -26,13 +26,14 @@ verified ─▶ history += step ─▶ next snapshot + plan … until planner sa
 | `extension/src/content/overlay.js` | Arrow/highlight anchored to live rect | Devin |
 | `extension/src/content/monitor.js` | User action detection + evidence-based verification | Devin / Codex review |
 | `extension/src/content/controller.js` | State machine, recovery, persistence across navigation | Devin |
-| `extension/src/content/panel.js` | Floating UI (closed shadow DOM) | Devin |
+| `extension/src/content/panel.js` | Floating UI (closed shadow DOM), hold-to-talk mic button | Devin |
+| `extension/src/content/voice.js` | Push-to-talk recording + spoken-reply playback (no keys; audio goes via the service worker) | Devin |
 | `extension/src/background/service-worker.js` | Backend proxy, tab-scoped task storage, toolbar opt-in injection | Devin |
-| `backend/src/planner.js`, `prompt.js`, `providers/` | Planner API, prompts, model adapters, future Sarvam STT/TTS adapters | Claude Code |
+| `backend/src/planner.js`, `prompt.js`, `providers/` | Planner API, prompts, model adapters, Sarvam STT/TTS (`providers/sarvam-speech.js`) | Claude Code |
 | `backend/src/safety.js` | Server-side allowlist sanitiser + output validation | Codex review |
 | `tests/` | Unit + real-Chrome E2E | Codex |
 | `demo-site/` | Safe practice pages | Devin |
 
-Content scripts share the isolated-world global `Koode` (no bundler). Each module exposes one object: `Koode.extractor`, `Koode.overlay`, `Koode.monitor`, `Koode.panel`, `Koode.controller`.
+Content scripts share the isolated-world global `Koode` (no bundler). Each module exposes one object: `Koode.extractor`, `Koode.overlay`, `Koode.monitor`, `Koode.panel`, `Koode.voice`, `Koode.controller`.
 
 See `docs/CONTRACTS.md` for the data contracts.

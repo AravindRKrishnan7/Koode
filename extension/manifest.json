@@ -15,6 +15,7 @@
         "src/content/extractor.js",
         "src/content/overlay.js",
         "src/content/monitor.js",
+        "src/content/voice.js",
         "src/content/panel.js",
         "src/content/controller.js",
         "src/content/main.js"

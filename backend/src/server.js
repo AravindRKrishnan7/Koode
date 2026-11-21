@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { planStep } from './planner.js';
+import { transcribe, speak } from './providers/sarvam-speech.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_DIR = path.resolve(here, '../../demo-site');
@@ -57,7 +58,7 @@ function serveStatic(req, res, urlPath) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204, '');
-  if (url.pathname === '/health') return send(res, 200, { ok: true, provider: cfg.provider, model: cfg.model, mock: cfg.provider === 'mock' });
+  if (url.pathname === '/health') return send(res, 200, { ok: true, provider: cfg.provider, model: cfg.model, mock: cfg.provider === 'mock', voice: !!cfg.keys.sarvam });
   if (url.pathname === '/' ) return send(res, 302, '', { Location: '/demo/' });
   if (url.pathname.startsWith('/demo')) return serveStatic(req, res, url.pathname);
   if (url.pathname === '/api/plan' && req.method === 'POST') {
@@ -76,6 +77,20 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       console.error('[plan] error', e.message);
       audit({ error: e.message });
+      return send(res, 502, { error: e.message });
+    }
+  }
+  if ((url.pathname === '/api/stt' || url.pathname === '/api/tts') && req.method === 'POST') {
+    const stt = url.pathname === '/api/stt';
+    try {
+      const body = JSON.parse(await readBody(req, stt ? 4 * 1024 * 1024 : 16 * 1024));
+      const out = stt ? await transcribe(cfg, body) : await speak(cfg, body);
+      // Lengths only: transcripts and spoken text stay out of the console log.
+      console.log(stt ? `[stt] ${out.model} ${out.latency_ms}ms lang=${out.language_code} transcript_chars=${out.transcript.length}`
+        : `[tts] ${out.model} ${out.latency_ms}ms text_chars=${String(body.text || '').length}`);
+      return send(res, 200, out);
+    } catch (e) {
+      console.error(stt ? '[stt] error' : '[tts] error', e.message);
       return send(res, 502, { error: e.message });
     }
   }

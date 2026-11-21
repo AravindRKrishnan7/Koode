@@ -7,7 +7,7 @@
   let host, root, els = {}, handlers = {};
 
   const STATE_LABEL = {
-    idle: 'Ready', finding: 'Finding…', waiting: 'Your turn', verifying: 'Checking…',
+    idle: 'Ready', listening: 'Listening…', transcribing: 'Understanding…', finding: 'Finding…', waiting: 'Your turn', verifying: 'Checking…',
     verified: 'Verified ✓', recovering: 'Let’s fix that', done: 'Done ✓', error: 'Problem', stopped: 'Stopped'
   };
 
@@ -35,6 +35,8 @@
     form { display: flex; gap: 6px; margin-top: 12px; }
     input { flex: 1; min-width: 0; border: 1.5px solid #e2d6c8; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 14px; outline: none; }
     input:focus { border-color: #ff7a1a; }
+    button.mic { border: 1.5px solid #e2d6c8; border-radius: 10px; width: 40px; font-size: 18px; background: #fff; cursor: pointer; touch-action: none; user-select: none; }
+    button.mic.on { background: #d92d20; border-color: #d92d20; box-shadow: 0 0 0 4px rgba(217,45,32,.25); }
     button.go { border: none; border-radius: 10px; padding: 0 14px; font: 700 14px inherit; color: #fff; background: #ff6a00; cursor: pointer; }
     .row { display: flex; gap: 6px; margin-top: 8px; }
     .row button { flex: 1; border: 1px solid #e2d6c8; background: #fff; border-radius: 9px; padding: 6px; font: 600 12px inherit; cursor: pointer; color: #1f2340; }
@@ -54,10 +56,10 @@
         <div class="card hidden">
           <header><span class="name">Koode</span><span class="ml">കൂടെ</span><span class="pill">Ready</span><button class="min" title="Minimise">–</button></header>
           <div class="body">
-            <div class="instr-ml">എന്താണ് ചെയ്യേണ്ടത്? താഴെ എഴുതൂ.</div>
-            <div class="instr-en">What would you like to do on this page?</div>
+            <div class="instr-ml">എന്താണ് ചെയ്യേണ്ടത്? 🎤 അമർത്തിപ്പിടിച്ച് പറയൂ, അല്ലെങ്കിൽ എഴുതൂ.</div>
+            <div class="instr-en">What would you like to do? Hold 🎤 and speak, or type.</div>
             <div class="explain hidden"></div>
-            <form><input placeholder="e.g. Help me fill this form" aria-label="Your goal" /><button class="go" type="submit">Guide</button></form>
+            <form><input placeholder="e.g. Help me fill this form" aria-label="Your goal" /><button class="mic" type="button" title="Hold to speak (Malayalam)" aria-label="Hold to speak">🎤</button><button class="go" type="submit">Guide</button></form>
             <div class="row"><button class="repeat" type="button">Repeat</button><button class="stop" type="button">Stop</button></div>
             <div class="meta"><span class="step">Step –</span><span class="badge">planner: –</span></div>
             <details><summary>Trace</summary><ol class="trace"></ol></details>
@@ -66,10 +68,19 @@
       </div>`;
     const q = (s) => root.querySelector(s);
     els = { wrap: q('.wrap'), launcher: q('.launcher'), card: q('.card'), pill: q('.pill'), ml: q('.instr-ml'), en: q('.instr-en'),
-      explain: q('.explain'), form: q('form'), input: q('input'), step: q('.step'), badge: q('.badge'), trace: q('.trace') };
+      explain: q('.explain'), form: q('form'), input: q('input'), mic: q('.mic'), step: q('.step'), badge: q('.badge'), trace: q('.trace') };
     els.launcher.addEventListener('click', () => open());
     q('.min').addEventListener('click', () => { els.card.classList.add('hidden'); els.launcher.classList.remove('hidden'); });
     els.form.addEventListener('submit', (e) => { e.preventDefault(); const g = els.input.value.trim(); if (g && handlers.onGoal) handlers.onGoal(g); });
+    // Push-to-talk: record while the mic button is held down.
+    els.mic.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      els.mic.setPointerCapture(e.pointerId);
+      els.mic.classList.add('on');
+      if (handlers.onMicDown) handlers.onMicDown();
+    });
+    els.mic.addEventListener('pointerup', () => releaseMic());
+    els.mic.addEventListener('pointercancel', () => releaseMic());
     q('.stop').addEventListener('click', () => handlers.onStop && handlers.onStop());
     q('.repeat').addEventListener('click', () => handlers.onRepeat && handlers.onRepeat());
     // Keep page shortcuts from firing while typing in Koode.
@@ -78,7 +89,23 @@
     setState('idle');
   }
 
-  function open() { els.card.classList.remove('hidden'); els.launcher.classList.add('hidden'); host.dataset.koodeOpen = 'true'; els.input.focus(); }
+  function open() { els.card.classList.remove('hidden'); els.launcher.classList.add('hidden'); host.dataset.koodeOpen = 'true'; els.input.focus(); micRect(); }
+
+  function releaseMic() {
+    if (!els.mic.classList.contains('on')) return;
+    els.mic.classList.remove('on');
+    if (handlers.onMicUp) handlers.onMicUp();
+  }
+
+  // Mic position for automated tests (the shadow root is closed).
+  function micRect() {
+    const r = els.mic.getBoundingClientRect();
+    host.dataset.koodeMicRect = [r.left, r.top, r.width, r.height].map(Math.round).join(',');
+  }
+
+  function setVoiceInfo(info) {
+    for (const [k, v] of Object.entries(info)) host.dataset['koodeVoice' + k[0].toUpperCase() + k.slice(1)] = String(v);
+  }
 
   function setState(state) {
     host.dataset.koodeState = state;
@@ -128,11 +155,11 @@
     for (const [left, top] of [[false, false], [true, false], [false, true], [true, true]]) {
       els.wrap.classList.toggle('left', left);
       els.wrap.classList.toggle('top', top);
-      if (!hits()) return;
+      if (!hits()) return micRect();
     }
     els.wrap.classList.toggle('left', before[0]);
     els.wrap.classList.toggle('top', before[1]);
   }
 
-  K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid };
+  K.panel = { init, open, setState, setInstruction, setStep, setPlanner, setGoal, log, avoid, releaseMic, setVoiceInfo };
 })();

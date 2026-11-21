@@ -4,14 +4,14 @@
   const K = (globalThis.Koode = globalThis.Koode || {});
   if (K.started) return; // already injected on this page
   const C = K.constants;
-  const { extractor, overlay, monitor, panel } = K;
+  const { extractor, overlay, monitor, panel, voice } = K;
 
-  const S = { goal: '', history: [], step: 0, target: null, lastPlan: null, token: 0, invalidRetries: 0, active: false };
+  const S = { goal: '', voice: false, history: [], step: 0, target: null, lastPlan: null, token: 0, invalidRetries: 0, active: false };
 
   const send = (msg) => chrome.runtime.sendMessage(msg);
 
   function persist(extra = {}) {
-    const task = S.active ? { goal: S.goal, history: S.history.slice(-20), step: S.step, url: location.href, ...extra } : null;
+    const task = S.active ? { goal: S.goal, voice: S.voice, history: S.history.slice(-20), step: S.step, url: location.href, ...extra } : null;
     send({ type: task ? 'koode:saveTask' : 'koode:clearTask', task }).catch(() => {});
   }
 
@@ -46,6 +46,7 @@
     if (resp.status === 'done') {
       panel.setState('done');
       panel.setInstruction({ ml: resp.instruction_ml || 'എല്ലാം കഴിഞ്ഞു!', en: resp.instruction_en || 'All done.', explain: resp.explanation_ml });
+      say(resp.instruction_ml || 'എല്ലാം കഴിഞ്ഞു!');
       panel.setStep(S.step, '');
       S.active = false;
       persist();
@@ -54,6 +55,7 @@
     if (resp.status !== 'guide') {
       panel.setState('idle');
       panel.setInstruction({ ml: resp.instruction_ml, en: resp.instruction_en || 'I could not find a matching control on this page.', explain: resp.explanation_ml });
+      say(resp.instruction_ml);
       return;
     }
 
@@ -76,6 +78,7 @@
     panel.setState('waiting');
     panel.setStep(S.step, r.info.label);
     panel.setInstruction({ ml: (resp.instruction_ml || '') + sensitiveNote, en: resp.instruction_en, explain: resp.explanation_ml });
+    say(resp.instruction_ml + (r.info.sensitive ? ' ഇത് നിങ്ങൾ തന്നെ ടൈപ്പ് ചെയ്യൂ.' : ''));
     overlay.point(r.anchor, {
       text: resp.instruction_ml || resp.instruction_en,
       lost: () => onLost(r),
@@ -138,6 +141,7 @@
       ml: `അത് "${info.label}" ആണ്. ശരിയായത് "${r.info.label}" — അമ്പടയാളം കാണിക്കുന്നിടത്ത്.`,
       en: `That was "${info.label}". The right one is "${r.info.label}" — where the arrow points.`
     });
+    say(`അത് "${info.label}" ആണ്. ശരിയായത് "${r.info.label}".`);
     overlay.point(r.anchor, { text: `"${r.info.label}"`, lost: () => onLost(r), rect: (rect) => panel.avoid(rect) });
   }
 
@@ -149,9 +153,61 @@
     panel.log('ERROR ' + msg);
   }
 
-  function start(goal) {
+  // Spoken replies only when the user asked by voice; text stays the fallback.
+  let ttsCount = 0;
+  function say(text) {
+    if (!S.voice || !text) return;
+    voice.speak(text).then((t) => {
+      if (!t) return;
+      panel.setVoiceInfo({ ttsCount: ++ttsCount, ttsMs: t.ms, ttsBackendMs: t.backend_ms });
+      panel.log(`spoke reply (${text.length} chars) in ${t.ms}ms`);
+    }, (e) => {
+      panel.setVoiceInfo({ error: 'tts: ' + e.message });
+      panel.log('voice reply failed: ' + e.message);
+    });
+  }
+
+  async function micDown() {
+    voice.hush();
+    try {
+      await voice.start();
+    } catch (e) {
+      panel.releaseMic();
+      panel.setVoiceInfo({ error: 'mic: ' + (e.name || e.message) });
+      panel.setInstruction({ ml: 'മൈക്ക് ലഭ്യമല്ല. ദയവായി ടൈപ്പ് ചെയ്യൂ.', en: 'Microphone not available — please type your request.' });
+      return;
+    }
+    panel.setState('listening');
+    panel.setInstruction({ ml: 'കേൾക്കുന്നു… പറഞ്ഞു കഴിഞ്ഞാൽ ബട്ടൺ വിടൂ.', en: 'Listening… release the button when you finish.' });
+  }
+
+  async function micUp() {
+    if (!voice.isRecording()) return;
+    const clip = await voice.stop();
+    if (!clip) {
+      panel.setState('idle');
+      panel.setInstruction({ ml: 'ബട്ടൺ അമർത്തിപ്പിടിച്ചുകൊണ്ട് സംസാരിക്കൂ.', en: 'Hold the mic button while you speak.' });
+      return;
+    }
+    panel.setState('transcribing');
+    const t0 = performance.now();
+    let resp;
+    try { resp = await voice.transcribe(clip); } catch (e) { resp = { error: String(e && e.message || e) }; }
+    const ms = Math.round(performance.now() - t0);
+    if (!resp || resp.error || !resp.transcript) {
+      panel.setState('idle');
+      panel.setVoiceInfo({ error: 'stt: ' + (resp && resp.error || 'empty transcript'), sttMs: ms });
+      panel.setInstruction({ ml: 'ക്ഷമിക്കണം, മനസ്സിലായില്ല. ഒന്നുകൂടി പറയൂ, അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യൂ.', en: "Sorry, I didn't catch that. Try again or type your request." });
+      return;
+    }
+    panel.setVoiceInfo({ sttMs: ms, sttBackendMs: resp.latency_ms, audioMs: clip.ms, transcriptChars: resp.transcript.length, lang: resp.language_code || '' });
+    panel.log(`voice: ${clip.ms}ms audio → ${resp.transcript.length}-char transcript in ${ms}ms (${resp.model})`);
+    start(resp.transcript, { voice: true });
+  }
+
+  function start(goal, opts = {}) {
     stop(true);
-    Object.assign(S, { goal, history: [], step: 0, active: true, invalidRetries: 0 });
+    Object.assign(S, { goal, voice: !!opts.voice, history: [], step: 0, active: true, invalidRetries: 0 });
     panel.setGoal(goal);
     panel.log(`goal set (${goal.length} chars)`);
     persist();
@@ -159,7 +215,7 @@
   }
 
   function resume(task) {
-    Object.assign(S, { goal: task.goal, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0 });
+    Object.assign(S, { goal: task.goal, voice: !!task.voice, history: task.history || [], step: task.step || 0, active: true, invalidRetries: 0 });
     panel.open();
     panel.setGoal(task.goal);
     panel.log('resumed after page load');
@@ -175,6 +231,7 @@
 
   function stop(silent) {
     S.token += 1;
+    voice.hush();
     S.active = false;
     S.target = null;
     monitor.stop();
@@ -196,5 +253,5 @@
     panel.setInstruction({ ml: S.lastPlan.instruction_ml, en: S.lastPlan.instruction_en, explain: S.lastPlan.explanation_ml });
   }
 
-  K.controller = { start, stop, resume, repeat, state: S };
+  K.controller = { start, stop, resume, repeat, micDown, micUp, state: S };
 })();
