@@ -122,3 +122,10 @@ test('compact prompt keeps every candidate id and its state', async () => {
   assert.deepEqual(sent.map((c) => c.id), orig.snapshot.candidates.map((c) => c.id));
   for (const c of sent) assert.ok(!('tag' in c) && !('in_viewport' in c) && !('bbox' in c));
 });
+
+test('a valid question survives an invalid reconsidered answer', async () => {
+  const replies = ['{"status":"ask","target_id":null,"instruction_en":"Which account?"}', '{"status":"guide","target_id":"bogus"}'];
+  const { result } = await planStep(body(), { provider: 'groq', model: 'm' }, { llm: async () => replies.shift() });
+  assert.equal(result.status, 'ask');
+  assert.equal(result.instruction_en, 'Which account?');
+});

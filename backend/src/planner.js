@@ -17,6 +17,7 @@ export async function planStep(body, cfg, { llm = complete } = {}) {
 
   let user = buildUserMessage(req);
   let lastReason = '';
+  let giveUp = null; // first valid ask/cannot_find, kept in case the reconsidered answer is invalid
   const meta = { rateLimitWaitMs: 0 };
   for (let attempt = 1; attempt <= 2; attempt++) {
     const raw = await llm(cfg, SYSTEM_PROMPT, user, meta);
@@ -25,10 +26,12 @@ export async function planStep(body, cfg, { llm = complete } = {}) {
     // A premature give-up is the commonest real-model miss (e.g. settings hidden behind a gear/menu): reconsider once.
     // "ask" is the same miss phrased as a question ("where is the dark mode option?").
     if (v.ok && (v.plan.status === 'cannot_find' || v.plan.status === 'ask') && attempt === 1 && req.snapshot.candidates.length) {
+      giveUp = v.plan;
       user = buildUserMessage(req) + `\n\nYou answered ${v.plan.status}. Re-check CANDIDATES: if any menu/settings/account/tab/icon control could plausibly lead toward the goal, guide to it; otherwise answer ${v.plan.status} again.`;
       continue;
     }
     if (v.ok) return { req, raw, result: { ...v.plan, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, tokens: meta.tokens, attempts: attempt } };
+    if (giveUp) return { req, raw, result: { ...giveUp, planner, latency_ms: Date.now() - started, rate_limit_wait_ms: meta.rateLimitWaitMs, tokens: meta.tokens, attempts: attempt, rejected: v.reason } };
     lastReason = v.reason;
     user = buildUserMessage(req) + `\n\nYour previous answer was rejected (${v.reason}). Return valid JSON and copy target_id exactly from CANDIDATES.`;
   }
