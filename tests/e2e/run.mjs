@@ -76,7 +76,10 @@ async function pointedElement(page) {
     const ctl = el.closest('input,select,textarea,button,a,label,[role]') || el;
     const real = ctl.tagName === 'LABEL' && ctl.control ? ctl.control : ctl;
     const r = (real.getClientRects().length && real.offsetParent !== null ? real : ctl).getBoundingClientRect();
-    return { tag: real.tagName.toLowerCase(), type: real.type || '', role: real.getAttribute('role') || '', id: real.id, text: (real.innerText || real.getAttribute('aria-label') || '').slice(0, 40), rect: [r.left, r.top, r.width, r.height] };
+    // Form ground truth: a correct next target is a required control still invalid, or Submit once all are valid.
+    const form = real.form || document.querySelector('form');
+    const formCorrect = form ? ((real.required && !real.checkValidity()) || (real.type === 'submit' && form.checkValidity())) : null;
+    return { formCorrect, tag: real.tagName.toLowerCase(), type: real.type || '', role: real.getAttribute('role') || '', id: real.id, text: (real.innerText || real.getAttribute('aria-label') || '').slice(0, 40), rect: [r.left, r.top, r.width, r.height] };
   });
 }
 
@@ -129,8 +132,10 @@ async function shot(page, file) {
 
 function readLog() { return fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8') : ''; }
 
-async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false }) {
+// expectPath: ordered target labels for the canonical route; null = judge by form validity.
+async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null, wrongClickSelector = null, scrollCheck = false, expectPath = null }) {
   const res = { name, goal, steps: [], wrongClick: null, anchorChecks: [], done: false, planner: null };
+  let pathIdx = 0;
   await startGoal(page, goal);
   let lastStep = 0;
   for (let i = 0; i < maxSteps; i++) {
@@ -144,6 +149,10 @@ async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null,
     const anchor = await anchorError(page);
     const step = { step: lastStep, targetLabel: p.koodeTarget, instruction: p.koodeInstruction, pointedAt: el && { tag: el.tag, type: el.type, id: el.id, text: el.text }, anchor };
     res.anchorChecks.push(anchor);
+    if (expectPath) {
+      step.correct = pathIdx < expectPath.length && (p.koodeTarget || '').trim().toLowerCase() === expectPath[pathIdx].toLowerCase();
+      if (step.correct) pathIdx++;
+    } else step.correct = !!(el && el.formCorrect);
 
     if (scrollCheck && el && el.type === 'password') {
       await page.mouse.wheel(0, -150); await sleep(300);
@@ -172,6 +181,7 @@ async function guidedRun(page, name, { goal, maxSteps = 14, wrongClickAt = null,
   }
   const fin = await panel(page);
   res.finalState = fin.koodeState;
+  if (expectPath) res.reachedEnd = pathIdx === expectPath.length;
   await shot(page, `${name}-final.png`);
   return res;
 }
@@ -211,10 +221,10 @@ async function main() {
         results.runs.push(await guidedRun(page, name, { goal: 'ഈ ഫോം പൂരിപ്പിക്കാൻ സഹായിക്കൂ (help me fill this form)', wrongClickAt: 3, wrongClickSelector: '#dob', scrollCheck: true }));
       } else if (kind === 'settings-a') {
         await page.goto(BACKEND + '/demo/settings.html');
-        results.runs.push(await guidedRun(page, name, { goal: 'Change this website to dark mode', maxSteps: 6, wrongClickAt: 1, wrongClickSelector: '#topbar a' }));
+        results.runs.push(await guidedRun(page, name, { goal: 'Change this website to dark mode', maxSteps: 6, wrongClickAt: 1, wrongClickSelector: '#topbar a', expectPath: ['Settings', 'Appearance', 'Dark'] }));
       } else if (kind === 'settings-b') {
         await page.goto(BACKEND + '/demo/settings.html?layout=b');
-        results.runs.push(await guidedRun(page, name, { goal: 'ഈ വെബ്സൈറ്റ് ഡാർക്ക് മോഡിലേക്ക് മാറ്റണം', maxSteps: 6 }));
+        results.runs.push(await guidedRun(page, name, { goal: 'ഈ വെബ്സൈറ്റ് ഡാർക്ക് മോഡിലേക്ക് മാറ്റണം', maxSteps: 6, expectPath: ['Menu', 'Display', 'Night mode'] }));
       } else if (kind === 'stale') {
         // Only meaningful when backend runs with KOODE_FAULT=stale_first.
         await page.goto(BACKEND + '/demo/settings.html');
@@ -236,6 +246,22 @@ async function main() {
   const newLog = readLog().slice(logStart);
   const leaks = [SECRETS.name, SECRETS.mobile, SECRETS.password, '1950'].filter((s) => newLog.includes(s));
   results.privacy = { planRequestsLogged: newLog.split('\n').filter(Boolean).length, typedValuesFoundInPlannerPayloads: leaks };
+  // Planner quality: first-shot target correctness per guided step, and per-request latency.
+  const steps = results.runs.flatMap((r) => r.steps || []);
+  const entries = newLog.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.result && e.result.planner && !e.result.planner.mock);
+  // Model latency excludes time spent waiting out provider rate limits (429 back-off), reported separately.
+  const lat = entries.map((e) => e.result.latency_ms - (e.result.rate_limit_wait_ms || 0)).sort((a, b) => a - b);
+  const waits = entries.map((e) => e.result.rate_limit_wait_ms || 0).filter(Boolean);
+  const pct = (q) => lat.length ? lat[Math.min(lat.length - 1, Math.floor(q * lat.length))] : null;
+  results.planner = {
+    provider: health.provider, model: health.model, mock: health.mock,
+    stepsJudged: steps.length, stepsCorrect: steps.filter((s) => s.correct).length,
+    // retried = second model call after an invalid id or a reconsidered cannot_find
+    llmRequests: entries.length, retried: entries.filter((e) => e.result.attempts > 1).length,
+    cannotFind: entries.filter((e) => e.result.status === 'cannot_find').length,
+    rateLimited: { requests: waits.length, totalWaitMs: waits.reduce((x, y) => x + y, 0) },
+    latencyMs: { mean: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : null, p50: pct(0.5), p95: pct(0.95), max: lat[lat.length - 1] ?? null }
+  };
   results.finishedAt = new Date().toISOString();
   fs.writeFileSync(path.join(ARTIFACTS, 'report.json'), JSON.stringify(results, null, 2));
   console.log(JSON.stringify(results, null, 2));
