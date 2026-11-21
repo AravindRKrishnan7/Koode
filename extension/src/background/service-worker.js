@@ -74,11 +74,9 @@ async function staleWriter(tabId, sender) {
   if (!origin) return false;
   try { return new URL(sender.url || '').origin !== origin; } catch (_) { return true; }
 }
-chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
-  if (info.status !== 'complete') return;
-  const k = 'nav:' + tabId;
-  const origin = (await chrome.storage.session.get(k))[k];
-  try { if (origin && new URL(tab.url || '').origin === origin) await chrome.storage.session.remove(k); } catch (_) {}
+// Any completed load ends the navigation window (destination, redirect, or abandoned navigation).
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'complete') chrome.storage.session.remove('nav:' + tabId).catch(() => {});
 });
 
 async function activeTab() {
